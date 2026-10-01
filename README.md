@@ -1,6 +1,6 @@
 # Pricing Decision Desk — Version 1
 
-A presentation-ready, browser-based calculator for comparing a current and proposed product price scenario against the historical sales contained in `Full Data_0924.xlsx`. The application uses only HTML, CSS, and JavaScript and has no package or build dependencies.
+A presentation-ready, browser-based calculator for exploring how a proposed product price could affect demand and contribution profit. It combines the historical sales in `Full Data_0924.xlsx` with a clearly labeled, user-controlled price-elasticity assumption. The application uses only HTML, CSS, and JavaScript and has no package or build dependencies.
 
 ## Historical data review
 
@@ -39,7 +39,16 @@ Across the 173 Sales rows:
 | Milk | 48 | €29.35 | 2,600 | €23.51 | 19.89% |
 | Yoghurt | 44 | €32.76, €34.07 | 2,227 | €26.39 | 21.48% |
 
-Price has too little variation to support a reliable demand curve: Milk and Ice Cream have only one observed price, while the other products have only two. Where two prices exist, higher-price rows generally have lower average units per line, most visibly for Cheese (21.6 units at €96.40 versus 16.0 at €99.13). This is an association—not evidence that price caused the difference—because area, time, order mix, inventory availability, and other simulation decisions may also differ. For that reason, V1 asks the user to supply expected units instead of generating a false demand forecast.
+### Elasticity assessment
+
+There is **not enough within-product price variation to estimate price elasticity responsibly**:
+
+- Milk and Ice Cream have only one observed price, making a within-product price response impossible to estimate.
+- Butter, Cheese, Cream, and Yoghurt each have only two price points. The samples are also uneven: Butter has 27 lines at €68.44 and only 3 at €70.86; Cream has 12 at €80.68 and only 2 at €85.38.
+- Higher-price rows generally have lower average units per line, most visibly for Cheese (21.6 units at €96.40 versus 16.0 at €99.13). However, this is an uncontrolled association. Area, time, order composition, inventory availability, and other simulation decisions can all affect line volume.
+- Comparing Milk's price and volume with Cheese's, for example, would confound price response with fundamental product differences. The app never estimates elasticity across products.
+
+Consequently, the application does **not** present a fitted elasticity as a historical fact. It asks the user to enter a negative elasticity assumption and labels every optimized result as a **scenario-based estimate, not a prediction**. The closest-price benchmark remains strictly descriptive.
 
 ## Run the app
 
@@ -59,13 +68,14 @@ Opening `index.html` directly also works in most modern browsers, but the local 
 ### Use
 
 1. Choose one of the six products. The form loads the product's highest observed price, median units per historical sales line, and weighted historical unit cost as convenient starting values.
-2. Enter the **current** price and expected units.
-3. Enter the **proposed** price and expected units. Expected volume is your scenario assumption; the app does not claim to predict demand.
-4. Review the variable cost per unit and change it if the simulation provides a better forward-looking cost.
-5. Select **Compare scenarios**.
-6. Present the profit-impact callout, the side-by-side metrics, and the closest observed historical price benchmark. If the proposed price was never observed, the benchmark explicitly says it is only the nearest price.
+2. Enter the **current** price and current units. These establish the demand baseline.
+3. Enter the **proposed** price.
+4. Enter a negative **price elasticity of demand** assumption. For example, `-1.5` means that a 1% price increase is associated with approximately a 1.5% decrease in units for a small price change. The exact constant-elasticity formula is used for the calculation.
+5. Review the variable cost per unit and change it if the simulation provides a better forward-looking cost.
+6. Select **Compare scenarios**. The app also updates automatically as valid inputs change.
+7. Present the profit-impact comparison, the closest observed historical benchmark, and the Price Optimizer. The chart shows price on the X-axis and projected contribution profit on the Y-axis.
 
-Blank, nonnumeric, negative, and zero-price values are rejected with field-specific messages. Zero units and zero cost are allowed because they can be valid simulation scenarios.
+Blank, nonnumeric, negative, and zero-price values are rejected with field-specific messages. Elasticity must be negative and no lower than `-10`. Zero units and zero cost are allowed because they can be valid simulation scenarios.
 
 ### Stop
 
@@ -76,19 +86,23 @@ Return to the terminal running the server and press **Ctrl+C**. The page can the
 For both current and proposed scenarios:
 
 ```text
-Revenue             = price × expected units
-Contribution profit = (price − variable cost per unit) × expected units
+Expected new units  = current units × (proposed price ÷ current price) ^ elasticity
+Revenue             = price × calculated units
+Contribution profit = (price − variable cost per unit) × calculated units
 Margin percentage   = contribution profit ÷ revenue
 Change in profit    = proposed contribution profit − current contribution profit
 ```
 
 The benchmark finds the selected product's observed price nearest to the proposed price, then reports the number of matching historical sales lines, their median delivered units per line, and their aggregate contribution margin (`sum(Margin) ÷ sum(NET_VALUE)`).
 
+The Price Optimizer evaluates 301 evenly spaced prices from **50% to 200% of the current price**. At every price it recalculates units using the selected constant elasticity and then calculates contribution profit. It returns the highest-profit evaluated scenario and plots the full profit curve. The bounded range prevents an optimizer with a weak elasticity assumption from recommending an unlimited price, but a result at either boundary is a signal to test different assumptions rather than a claim that the boundary is optimal in the real market.
+
 ## Assumptions
 
 - `COST` behaves like a variable/attributable sales cost for scenario contribution analysis. The workbook calls the residual `Margin`; V1 labels it contribution profit to distinguish it from whole-company accounting profit.
 - Price, cost, revenue, and profit are in EUR, and `ST` represents one unit.
-- Expected units supplied by the user are deliverable; V1 does not constrain them by inventory or logistics capacity.
+- Current units supplied by the user represent demand at the current price and are deliverable; the app does not constrain calculated units by inventory or logistics capacity.
+- A constant-elasticity relationship is a scenario assumption. The same response is applied throughout the bounded 50%–200% price range.
 - Unit cost stays constant as volume and price change unless the user edits it.
 - A historical sales line is the comparison unit for median order volume; it is not a full period's demand.
 - The embedded `data.js` is a faithful, reduced export of the 173 Sales rows containing only the fields needed by the browser app.
@@ -100,6 +114,7 @@ The benchmark finds the selected product's observed price nearest to the propose
 - Sales-line volume may be affected by region, time, customer/order composition, inventory constraints, competitor actions, promotion, and simulation choices not controlled in this analysis.
 - The workbook does not separate all fixed and variable costs. Treating recorded sales cost as variable is useful for a classroom scenario, not a full P&L forecast.
 - The nearest-price benchmark is descriptive. It does not claim the proposed scenario will reproduce past volume or margin.
+- Optimizer results are highly sensitive to the elasticity and cost assumptions. They are scenario-based estimates, not recommended real-world prices or forecasts.
 - V1 does not model taxes, discounts, service levels, capacity, spoilage, stockouts, or cross-product effects.
 - The app is static: when the workbook changes, `data.js` must be regenerated before the browser reflects those changes.
 

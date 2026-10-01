@@ -21,7 +21,7 @@
         <div>
           <p class="eyebrow">LOGISTICS PRICING SCENARIO</p>
           <h1 id="page-title">Make the price decision clear.</h1>
-          <p class="intro">Compare two scenarios using your volume assumptions and unit economics from 173 historical sales lines.</p>
+          <p class="intro">Explore how a price change could affect demand and contribution profit using an explicit, adjustable elasticity assumption.</p>
         </div>
         <aside class="data-note">
           <span class="status-dot" aria-hidden="true"></span>
@@ -42,7 +42,7 @@
             <small id="product-context"></small>
           </label>
 
-          <div class="comparison-labels" aria-hidden="true"><span>Current</span><span>Proposed</span></div>
+          <div class="comparison-labels" aria-hidden="true"><span>Current baseline</span><span>Price scenario</span></div>
           <div class="field-grid paired">
             <label class="field">
               <span>Price per unit</span>
@@ -55,16 +55,23 @@
               <small class="error" id="proposed-price-error"></small>
             </label>
             <label class="field">
-              <span>Expected units</span>
+              <span>Current units</span>
               <input id="current-units" name="currentUnits" inputmode="decimal" autocomplete="off">
               <small class="error" id="current-units-error"></small>
             </label>
             <label class="field">
-              <span>Expected units</span>
-              <input id="proposed-units" name="proposedUnits" inputmode="decimal" autocomplete="off">
-              <small class="error" id="proposed-units-error"></small>
+              <span>Expected new units</span>
+              <output id="calculated-units" class="calculated-field" for="current-price proposed-price current-units elasticity">—</output>
+              <small>Calculated from price and elasticity</small>
             </label>
           </div>
+
+          <label class="field field-wide elasticity-field">
+            <span>Price elasticity of demand</span>
+            <input id="elasticity" name="elasticity" inputmode="decimal" autocomplete="off" value="-1.5">
+            <small id="elasticity-context">An elasticity of −1.5 means a 1% price increase is associated with roughly a 1.5% decrease in units for small changes.</small>
+            <small class="error" id="elasticity-error"></small>
+          </label>
 
           <label class="field field-wide cost-field">
             <span>Variable cost per unit</span>
@@ -106,12 +113,31 @@
             </div>
             <p id="benchmark-note">Select a product to see an evidence-based comparison.</p>
           </div>
+
+          <div class="optimizer" id="optimizer">
+            <div class="optimizer-head">
+              <div><p class="step">PRICE OPTIMIZER</p><h3>Scenario-based estimate</h3></div>
+              <span class="assumption-badge">Not a prediction</span>
+            </div>
+            <p class="optimizer-intro">Highest projected contribution profit within 50%–200% of the current price, using your elasticity assumption.</p>
+            <div class="recommended-price"><span>Recommended price</span><strong id="optimal-price">—</strong></div>
+            <div class="optimizer-grid">
+              <div><span>Expected units</span><strong id="optimal-units">—</strong></div>
+              <div><span>Revenue</span><strong id="optimal-revenue">—</strong></div>
+              <div><span>Contribution profit</span><strong id="optimal-profit">—</strong></div>
+              <div><span>Profit change</span><strong id="optimal-change">—</strong></div>
+            </div>
+            <div class="chart-wrap">
+              <canvas id="profit-chart" width="720" height="270" role="img" aria-label="Projected contribution profit by price"></canvas>
+            </div>
+            <p class="chart-caption"><span aria-hidden="true"></span> Projected profit curve <i></i><span aria-hidden="true"></span> Recommended scenario</p>
+          </div>
         </section>
       </section>
 
       <section class="method-strip">
         <strong>How to read this</strong>
-        <p>Contribution profit = (price − variable cost) × expected units. Volumes are your assumptions—not a demand forecast.</p>
+        <p>New units = current units × (new price ÷ current price)<sup>elasticity</sup>. The resulting recommendation is a scenario estimate—not a demand prediction.</p>
       </section>
     </main>
 

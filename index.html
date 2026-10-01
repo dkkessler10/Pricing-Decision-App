@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Compare a proposed logistics price scenario with historical sales performance.">
+    <title>Pricing Decision Desk</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="Pricing Decision Desk home">
+        <span class="brand-mark">PD</span>
+        <span>Pricing Decision Desk</span>
+      </a>
+      <span class="version">Class simulation · V1</span>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow">LOGISTICS PRICING SCENARIO</p>
+          <h1 id="page-title">Make the price decision clear.</h1>
+          <p class="intro">Explore how a price change could affect demand and contribution profit using an explicit, adjustable elasticity assumption.</p>
+        </div>
+        <aside class="data-note">
+          <span class="status-dot" aria-hidden="true"></span>
+          <div><strong>Historical data loaded</strong><span>6 products · EUR · steps 5–30</span></div>
+        </aside>
+      </section>
+
+      <section class="workspace">
+        <form id="scenario-form" class="scenario-card" novalidate>
+          <div class="section-heading">
+            <div><p class="step">01</p><h2>Build a scenario</h2></div>
+            <button type="button" class="text-button" id="reset-button">Reset</button>
+          </div>
+
+          <label class="field field-wide">
+            <span>Product</span>
+            <select id="product" name="product"></select>
+            <small id="product-context"></small>
+          </label>
+
+          <div class="comparison-labels" aria-hidden="true"><span>Current baseline</span><span>Price scenario</span></div>
+          <div class="field-grid paired">
+            <label class="field">
+              <span>Price per unit</span>
+              <div class="input-shell"><span>€</span><input id="current-price" name="currentPrice" inputmode="decimal" autocomplete="off"></div>
+              <small class="error" id="current-price-error"></small>
+            </label>
+            <label class="field">
+              <span>Price per unit</span>
+              <div class="input-shell"><span>€</span><input id="proposed-price" name="proposedPrice" inputmode="decimal" autocomplete="off"></div>
+              <small class="error" id="proposed-price-error"></small>
+            </label>
+            <label class="field">
+              <span>Current units</span>
+              <input id="current-units" name="currentUnits" inputmode="decimal" autocomplete="off">
+              <small class="error" id="current-units-error"></small>
+            </label>
+            <label class="field">
+              <span>Expected new units</span>
+              <output id="calculated-units" class="calculated-field" for="current-price proposed-price current-units elasticity">—</output>
+              <small>Calculated from price and elasticity</small>
+            </label>
+          </div>
+
+          <label class="field field-wide elasticity-field">
+            <span>Price elasticity of demand</span>
+            <input id="elasticity" name="elasticity" inputmode="decimal" autocomplete="off" value="-1.5">
+            <small id="elasticity-context">An elasticity of −1.5 means a 1% price increase is associated with roughly a 1.5% decrease in units for small changes.</small>
+            <small class="error" id="elasticity-error"></small>
+          </label>
+
+          <label class="field field-wide cost-field">
+            <span>Variable cost per unit</span>
+            <div class="input-shell"><span>€</span><input id="unit-cost" name="unitCost" inputmode="decimal" autocomplete="off"></div>
+            <small id="cost-context"></small>
+            <small class="error" id="unit-cost-error"></small>
+          </label>
+
+          <div id="form-message" class="form-message" role="alert" aria-live="polite"></div>
+          <button class="primary-button" type="submit">Compare scenarios <span aria-hidden="true">→</span></button>
+        </form>
+
+        <section class="results-card" aria-labelledby="results-title">
+          <div class="section-heading">
+            <div><p class="step">02</p><h2 id="results-title">Decision snapshot</h2></div>
+            <span class="pill" id="decision-pill">Ready</span>
+          </div>
+
+          <div class="decision-callout" id="decision-callout" aria-live="polite">
+            <div class="callout-icon" aria-hidden="true">↗</div>
+            <div><p class="callout-label">PROFIT IMPACT</p><strong id="profit-change">€0</strong><p id="decision-copy">Adjust the scenario, then compare.</p></div>
+          </div>
+
+          <div class="metric-table" role="table" aria-label="Current and proposed scenario comparison">
+            <div class="metric-row metric-header" role="row"><span role="columnheader">Metric</span><span role="columnheader">Current</span><span role="columnheader">Proposed</span></div>
+            <div class="metric-row" role="row"><span role="rowheader">Price</span><strong id="current-price-output">—</strong><strong id="proposed-price-output">—</strong></div>
+            <div class="metric-row" role="row"><span role="rowheader">Expected units</span><strong id="current-units-output">—</strong><strong id="proposed-units-output">—</strong></div>
+            <div class="metric-row" role="row"><span role="rowheader">Revenue</span><strong id="current-revenue">—</strong><strong id="proposed-revenue">—</strong></div>
+            <div class="metric-row emphasis" role="row"><span role="rowheader">Contribution profit</span><strong id="current-profit">—</strong><strong id="proposed-profit">—</strong></div>
+            <div class="metric-row" role="row"><span role="rowheader">Margin</span><strong id="current-margin">—</strong><strong id="proposed-margin">—</strong></div>
+          </div>
+
+          <div class="benchmark" id="benchmark">
+            <div class="benchmark-head"><div><p class="step">HISTORY</p><h3>Closest observed price</h3></div><span id="benchmark-price">—</span></div>
+            <div class="benchmark-grid">
+              <div><span>Transactions</span><strong id="benchmark-count">—</strong></div>
+              <div><span>Median units / order</span><strong id="benchmark-units">—</strong></div>
+              <div><span>Avg. margin</span><strong id="benchmark-margin">—</strong></div>
+            </div>
+            <p id="benchmark-note">Select a product to see an evidence-based comparison.</p>
+          </div>
+
+          <div class="optimizer" id="optimizer">
+            <div class="optimizer-head">
+              <div><p class="step">PRICE OPTIMIZER</p><h3>Scenario-based estimate</h3></div>
+              <span class="assumption-badge">Not a prediction</span>
+            </div>
+            <p class="optimizer-intro">Highest projected contribution profit within 50%–200% of the current price, using your elasticity assumption.</p>
+            <div class="recommended-price"><span>Recommended price</span><strong id="optimal-price">—</strong></div>
+            <div class="optimizer-grid">
+              <div><span>Expected units</span><strong id="optimal-units">—</strong></div>
+              <div><span>Revenue</span><strong id="optimal-revenue">—</strong></div>
+              <div><span>Contribution profit</span><strong id="optimal-profit">—</strong></div>
+              <div><span>Profit change</span><strong id="optimal-change">—</strong></div>
+            </div>
+            <div class="chart-wrap">
+              <canvas id="profit-chart" width="720" height="270" role="img" aria-label="Projected contribution profit by price"></canvas>
+            </div>
+            <p class="chart-caption"><span aria-hidden="true"></span> Projected profit curve <i></i><span aria-hidden="true"></span> Recommended scenario</p>
+          </div>
+        </section>
+      </section>
+
+      <section class="method-strip">
+        <strong>How to read this</strong>
+        <p>New units = current units × (new price ÷ current price)<sup>elasticity</sup>. The resulting recommendation is a scenario estimate—not a demand prediction.</p>
+      </section>
+    </main>
+
+    <footer>Source: <code>Full Data_0924.xlsx</code>, Sales worksheet <span>•</span> Rounded for presentation</footer>
+    <script src="data.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

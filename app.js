@@ -95,7 +95,8 @@
       fields.unitCost.value = summary.unitCost.toFixed(2);
       fields.elasticity.value = "-1.5";
       const range = summary.prices.length === 1 ? money.format(summary.prices[0]) : `${money.format(summary.prices[0])}–${money.format(summary.prices.at(-1))}`;
-      document.querySelector("#product-context").textContent = `${productRows.length} sales lines · observed price ${summary.prices.length === 1 ? "" : "range "}${range}`;
+      const datasetCounts = ["Regular", "Extended"].map((dataset) => `${dataset}: ${productRows.filter((row) => row.dataset === dataset).length}`).join(" · ");
+      document.querySelector("#product-context").textContent = `${productRows.length} sales lines (${datasetCounts}) · observed price ${summary.prices.length === 1 ? "" : "range "}${range}`;
       document.querySelector("#cost-context").textContent = `Defaults to ${money.format(summary.unitCost)}, the historical weighted average cost per delivered unit.`;
       clearErrors();
       compare();

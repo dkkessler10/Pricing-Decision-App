@@ -45,4 +45,17 @@ assert.equal(benchmark.count, 2);
 assert.equal(benchmark.medianUnits, 3);
 assert.equal(benchmark.margin, 0.4);
 
+vm.runInContext(fs.readFileSync("data.js", "utf8"), context);
+const historical = context.window.HISTORICAL_SALES;
+assert.equal(historical.length, 1373);
+assert.equal(historical.filter((row) => row.dataset === "Regular").length, 692);
+assert.equal(historical.filter((row) => row.dataset === "Extended").length, 681);
+assert.deepEqual([...new Set(historical.map((row) => row.dataset))].sort(), ["Extended", "Regular"]);
+
+const milkSummary = summariseProduct(historical.filter((row) => row.product === "Milk"));
+assert.equal(milkSummary.defaultPrice, 29.35);
+assert.equal(milkSummary.medianUnits, 66);
+assert.ok(Math.abs(milkSummary.unitCost - 23.249076939159526) < 1e-12);
+assert.equal(historical.reduce((sum, row) => sum + row.units, 0), 53524);
+
 console.log("All demand, pricing, optimizer, validation, summary, and benchmark tests passed.");

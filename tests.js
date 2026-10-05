@@ -1,48 +1,51 @@
 const fs = require("node:fs");
 const vm = require("node:vm");
 const assert = require("node:assert/strict");
-
 const context = { window: {}, Intl };
 vm.createContext(context);
+vm.runInContext(fs.readFileSync("data.js", "utf8"), context);
+vm.runInContext(fs.readFileSync("model-data.js", "utf8"), context);
 vm.runInContext(fs.readFileSync("app.js", "utf8"), context);
-const { calculateScenario, calculateDemand, optimizePrice, validateValues, summariseProduct, closestBenchmark, median } = context.window.PricingApp;
+const { modelFeatures, predictDemand, calculateProjection, optimizePrice, validateValues, summariseProduct } = context.window.PricingApp;
+const model = context.window.DEMAND_MODEL;
+const sales = context.window.HISTORICAL_SALES;
 
-assert.deepEqual({ ...calculateScenario(30, 100, 20) }, { price: 30, units: 100, revenue: 3000, profit: 1000, margin: 1 / 3 });
-assert.equal(calculateScenario(10, 0, 5).margin, 0);
-assert.equal(median([5, 1, 3]), 3);
-assert.equal(median([4, 2, 1, 3]), 2.5);
-assert.equal(calculateDemand(100, 11, 10, -1), 100 / 1.1);
-assert.equal(calculateDemand(100, 20, 10, -1.5), 100 * Math.pow(2, -1.5));
+assert.equal(model.trainingObservations, 459);
+assert.equal(model.excludedConstrained, 285);
+assert.equal(model.totalObservations, 744);
+assert.equal(model.coefficients.length, 15);
+assert.equal(model.validation["linear ridge"].observations, 99);
+assert.ok(model.validation["linear ridge"].mae < model.validation["product-period baseline"].mae);
 
-const optimized = optimizePrice(10, 100, 6, -2);
-assert.equal(optimized.minimum, 5);
-assert.equal(optimized.maximum, 20);
-assert.ok(Math.abs(optimized.best.price - 12) < 0.001);
-assert.ok(Math.abs(optimized.best.profit - (1250 / 3)) < 0.001);
-assert.equal(optimized.scenarios.length, 301);
+const input = { product: "Milk", dataset: "Extended", period: 8, price: 28.18, marketPrice: 27.5 };
+assert.equal(modelFeatures(model, input).length, model.coefficients.length);
+const demand = predictDemand(model, input);
+assert.ok(Number.isFinite(demand) && demand >= 0);
 
-const invalid = validateValues({ currentPrice: "", proposedPrice: "abc", currentUnits: "-1", unitCost: "12", elasticity: "0" });
-assert.equal(invalid.currentPrice, "Required");
-assert.equal(invalid.proposedPrice, "Enter a number");
-assert.equal(invalid.currentUnits, "Must be 0 or more");
-assert.equal(invalid.elasticity, "Use a negative value");
-assert.equal(validateValues({ currentPrice: "0", proposedPrice: "1", currentUnits: "1", unitCost: "0", elasticity: "-1.5" }).currentPrice, "Must be greater than 0");
-assert.equal(validateValues({ currentPrice: "1", proposedPrice: "1", currentUnits: "1", unitCost: "0", elasticity: "-11" }).elasticity, "Use −10 or greater");
+assert.deepEqual({ ...calculateProjection(120, 100, 30, 20) }, {
+  demand: 120, unitsSold: 100, endingInventory: 0, lostSales: 20,
+  price: 30, revenue: 3000, profit: 1000, margin: 1 / 3
+});
+assert.deepEqual({ ...calculateProjection(80, 100, 30, 20) }, {
+  demand: 80, unitsSold: 80, endingInventory: 20, lostSales: 0,
+  price: 30, revenue: 2400, profit: 800, margin: 1 / 3
+});
 
-const records = [
-  { price: 10, units: 2, cost: 12, revenue: 20, profit: 8 },
-  { price: 10, units: 4, cost: 24, revenue: 40, profit: 16 },
-  { price: 12, units: 3, cost: 18, revenue: 36, profit: 18 }
-];
-const summary = summariseProduct(records);
-assert.deepEqual([...summary.prices], [10, 12]);
-assert.equal(summary.defaultPrice, 12);
-assert.equal(summary.unitCost, 6);
-assert.equal(summary.medianUnits, 3);
-const benchmark = closestBenchmark(records, 10.4);
-assert.equal(benchmark.price, 10);
-assert.equal(benchmark.count, 2);
-assert.equal(benchmark.medianUnits, 3);
-assert.equal(benchmark.margin, 0.4);
+const optimized = optimizePrice(model, input, 23.25, 527);
+assert.equal(optimized.minimum, model.priceRanges.Milk.minimum);
+assert.equal(optimized.maximum, model.priceRanges.Milk.maximum);
+assert.equal(optimized.scenarios.length, 101);
+assert.ok(optimized.best.price >= optimized.minimum && optimized.best.price <= optimized.maximum);
 
-console.log("All demand, pricing, optimizer, validation, summary, and benchmark tests passed.");
+const invalid = validateValues({ proposedPrice: "", inventory: "-1", marketPrice: "abc", unitCost: "0" });
+assert.equal(invalid.proposedPrice, "Required");
+assert.equal(invalid.inventory, "Must be 0 or more");
+assert.equal(invalid.marketPrice, "Enter a number");
+assert.deepEqual({ ...validateValues({ proposedPrice: "30", inventory: "0", marketPrice: "28", unitCost: "0" }) }, {});
+
+const milk = sales.filter((row) => row.product === "Milk" && row.dataset === "Extended");
+assert.ok(Math.abs(summariseProduct(milk).unitCost - 23.3566394747314) < 1e-10);
+assert.equal(sales.length, 1373);
+assert.equal(sales.filter((row) => row.dataset === "Regular").length, 692);
+assert.equal(sales.filter((row) => row.dataset === "Extended").length, 681);
+console.log("All model, inventory projection, optimizer, validation, and current-data tests passed.");

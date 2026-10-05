@@ -5,100 +5,86 @@
   const whole = new Intl.NumberFormat("en-IE", { maximumFractionDigits: 1 });
   const percent = new Intl.NumberFormat("en-IE", { style: "percent", maximumFractionDigits: 1 });
 
-  function calculateScenario(price, units, unitCost) {
-    const revenue = price * units;
-    const profit = (price - unitCost) * units;
-    return { price, units, revenue, profit, margin: revenue === 0 ? 0 : profit / revenue };
+  function modelFeatures(model, values) {
+    const features = [1];
+    features.push(...model.products.slice(1).map((product) => values.product === product ? 1 : 0));
+    features.push(values.dataset === "Extended" ? 1 : 0);
+    features.push(Number(values.period));
+    features.push(...model.products.map((product) => values.product === product ? Number(values.price) : 0));
+    features.push(Number(values.price) / Number(values.marketPrice));
+    return features;
   }
 
-  function calculateDemand(currentUnits, proposedPrice, currentPrice, elasticity) {
-    return currentUnits * Math.pow(proposedPrice / currentPrice, elasticity);
+  function predictDemand(model, values) {
+    return Math.max(0, modelFeatures(model, values).reduce((total, value, index) => total + value * model.coefficients[index], 0));
   }
 
-  function optimizePrice(currentPrice, currentUnits, unitCost, elasticity, steps = 300) {
-    const minimum = currentPrice * 0.5;
-    const maximum = currentPrice * 2;
+  function calculateProjection(demand, inventory, price, unitCost) {
+    const unitsSold = Math.min(demand, inventory);
+    const endingInventory = Math.max(0, inventory - unitsSold);
+    const lostSales = Math.max(0, demand - inventory);
+    const revenue = unitsSold * price;
+    const profit = (price - unitCost) * unitsSold;
+    return { demand, unitsSold, endingInventory, lostSales, price, revenue, profit, margin: revenue ? profit / revenue : 0 };
+  }
+
+  function optimizePrice(model, values, unitCost, inventory, steps = 100) {
+    const range = model.priceRanges[values.product];
     const scenarios = [];
     for (let index = 0; index <= steps; index += 1) {
-      const price = minimum + ((maximum - minimum) * index / steps);
-      const units = calculateDemand(currentUnits, price, currentPrice, elasticity);
-      scenarios.push(calculateScenario(price, units, unitCost));
+      const price = range.minimum + ((range.maximum - range.minimum) * index / steps);
+      const demand = predictDemand(model, { ...values, price });
+      scenarios.push(calculateProjection(demand, inventory, price, unitCost));
     }
-    const best = scenarios.reduce((winner, scenario) => {
-      if (scenario.profit > winner.profit) return scenario;
-      if (Math.abs(scenario.profit - winner.profit) < 0.000001 && Math.abs(scenario.price - currentPrice) < Math.abs(winner.price - currentPrice)) return scenario;
-      return winner;
-    });
-    return { minimum, maximum, best, scenarios };
+    const best = scenarios.reduce((winner, scenario) => scenario.profit > winner.profit ? scenario : winner);
+    return { ...range, best, scenarios };
   }
 
   function validateValues(values) {
     const errors = {};
-    ["currentPrice", "proposedPrice", "currentUnits", "unitCost", "elasticity"].forEach((key) => {
+    ["proposedPrice", "inventory", "marketPrice", "unitCost"].forEach((key) => {
       const raw = String(values[key] ?? "").trim();
       if (!raw) errors[key] = "Required";
       else if (!Number.isFinite(Number(raw))) errors[key] = "Enter a number";
-      else if (key !== "elasticity" && Number(raw) < 0) errors[key] = "Must be 0 or more";
+      else if (Number(raw) < 0) errors[key] = "Must be 0 or more";
     });
-    if (!errors.currentPrice && Number(values.currentPrice) === 0) errors.currentPrice = "Must be greater than 0";
     if (!errors.proposedPrice && Number(values.proposedPrice) === 0) errors.proposedPrice = "Must be greater than 0";
-    if (!errors.elasticity && Number(values.elasticity) >= 0) errors.elasticity = "Use a negative value";
-    if (!errors.elasticity && Number(values.elasticity) < -10) errors.elasticity = "Use −10 or greater";
+    if (!errors.marketPrice && Number(values.marketPrice) === 0) errors.marketPrice = "Must be greater than 0";
     return errors;
   }
 
   function summariseProduct(records) {
-    const prices = [...new Set(records.map((row) => row.price))].sort((a, b) => a - b);
     const totalUnits = records.reduce((sum, row) => sum + row.units, 0);
     const totalCost = records.reduce((sum, row) => sum + row.cost, 0);
-    return {
-      prices,
-      defaultPrice: prices[prices.length - 1],
-      unitCost: totalCost / totalUnits,
-      medianUnits: median(records.map((row) => row.units))
-    };
-  }
-
-  function median(values) {
-    const sorted = [...values].sort((a, b) => a - b);
-    const middle = Math.floor(sorted.length / 2);
-    return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
-  }
-
-  function closestBenchmark(records, targetPrice) {
-    const distances = records.map((row) => Math.abs(row.price - targetPrice));
-    const closestDistance = Math.min(...distances);
-    const matches = records.filter((row) => Math.abs(row.price - targetPrice) === closestDistance);
-    const revenue = matches.reduce((sum, row) => sum + row.revenue, 0);
-    const profit = matches.reduce((sum, row) => sum + row.profit, 0);
-    return { price: matches[0].price, count: matches.length, medianUnits: median(matches.map((row) => row.units)), margin: profit / revenue };
+    return { unitCost: totalCost / totalUnits };
   }
 
   function init() {
+    const model = window.DEMAND_MODEL;
     const records = window.HISTORICAL_SALES || [];
     const form = document.querySelector("#scenario-form");
     const product = document.querySelector("#product");
+    const dataset = document.querySelector("#dataset");
+    const period = document.querySelector("#period");
     const fields = {
-      currentPrice: document.querySelector("#current-price"), proposedPrice: document.querySelector("#proposed-price"),
-      currentUnits: document.querySelector("#current-units"), unitCost: document.querySelector("#unit-cost"),
-      elasticity: document.querySelector("#elasticity")
+      proposedPrice: document.querySelector("#proposed-price"), inventory: document.querySelector("#inventory"),
+      marketPrice: document.querySelector("#market-price"), unitCost: document.querySelector("#unit-cost")
     };
-    const products = [...new Set(records.map((row) => row.product))].sort();
-    product.innerHTML = products.map((name) => `<option value="${name}">${name}</option>`).join("");
+    product.innerHTML = model.products.map((name) => `<option value="${name}">${name}</option>`).join("");
 
     function fillDefaults() {
-      const productRows = records.filter((row) => row.product === product.value);
-      const summary = summariseProduct(productRows);
-      fields.currentPrice.value = summary.defaultPrice.toFixed(2);
-      fields.proposedPrice.value = (summary.defaultPrice * 1.03).toFixed(2);
-      fields.currentUnits.value = String(summary.medianUnits);
-      fields.unitCost.value = summary.unitCost.toFixed(2);
-      fields.elasticity.value = "-1.5";
-      const range = summary.prices.length === 1 ? money.format(summary.prices[0]) : `${money.format(summary.prices[0])}–${money.format(summary.prices.at(-1))}`;
-      const datasetCounts = ["Regular", "Extended"].map((dataset) => `${dataset}: ${productRows.filter((row) => row.dataset === dataset).length}`).join(" · ");
-      document.querySelector("#product-context").textContent = `${productRows.length} sales lines (${datasetCounts}) · observed price ${summary.prices.length === 1 ? "" : "range "}${range}`;
-      document.querySelector("#cost-context").textContent = `Defaults to ${money.format(summary.unitCost)}, the historical weighted average cost per delivered unit.`;
-      clearErrors();
+      const context = model.contexts[`${dataset.value}|${product.value}`];
+      period.innerHTML = model.periods.filter((value) => value <= context.period).map((value) => `<option value="${value}">${value}</option>`).join("");
+      period.value = String(context.period);
+      fields.proposedPrice.value = context.currentPrice.toFixed(2);
+      fields.inventory.value = String(context.inventory);
+      fields.marketPrice.value = context.marketPrice.toFixed(2);
+      fields.unitCost.value = summariseProduct(records.filter((row) => row.product === product.value && row.dataset === dataset.value)).unitCost.toFixed(2);
+      const range = model.priceRanges[product.value];
+      document.querySelector("#product-context").textContent = `Model price range ${money.format(range.minimum)}–${money.format(range.maximum)} · predicts total demand for one simulation step.`;
+      document.querySelector("#inventory-context").textContent = `Defaults to the ${dataset.value} workbook's current inventory across all locations.`;
+      document.querySelector("#market-context").textContent = `Latest quantity-weighted market price for ${dataset.value}.`;
+      document.querySelector("#cost-context").textContent = "Historical weighted average cost per delivered unit.";
       compare();
     }
 
@@ -120,67 +106,40 @@
           fields[key].closest(".field").classList.add("has-error");
           document.querySelector(`#${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}-error`).textContent = message;
         });
-        document.querySelector("#form-message").textContent = "Correct the highlighted values to compare scenarios.";
-        document.querySelector("#calculated-units").textContent = "—";
+        document.querySelector("#form-message").textContent = "Correct the highlighted values to calculate the model estimate.";
         if (focusOnError) fields[Object.keys(errors)[0]].focus();
         return;
       }
-      const numeric = Object.fromEntries(Object.entries(values).map(([key, value]) => [key, Number(value)]));
-      const current = calculateScenario(numeric.currentPrice, numeric.currentUnits, numeric.unitCost);
-      const proposedUnits = calculateDemand(numeric.currentUnits, numeric.proposedPrice, numeric.currentPrice, numeric.elasticity);
-      const proposed = calculateScenario(numeric.proposedPrice, proposedUnits, numeric.unitCost);
-      document.querySelector("#calculated-units").textContent = whole.format(proposedUnits);
-      renderResults(current, proposed);
-      renderBenchmark(records.filter((row) => row.product === product.value), proposed.price);
-      renderOptimizer(optimizePrice(numeric.currentPrice, numeric.currentUnits, numeric.unitCost, numeric.elasticity), current);
+      const input = { product: product.value, dataset: dataset.value, period: Number(period.value), price: Number(values.proposedPrice), marketPrice: Number(values.marketPrice) };
+      const projection = calculateProjection(predictDemand(model, input), Number(values.inventory), input.price, Number(values.unitCost));
+      renderProjection(projection);
+      renderOptimizer(optimizePrice(model, input, Number(values.unitCost), Number(values.inventory)));
     }
 
-    function renderResults(current, proposed) {
-      const change = proposed.profit - current.profit;
-      const tolerance = 0.005;
-      const state = change > tolerance ? "positive" : change < -tolerance ? "negative" : "neutral";
+    function renderProjection(result) {
+      document.querySelector("#predicted-demand").textContent = whole.format(result.demand);
+      document.querySelector("#expected-sales").textContent = whole.format(result.unitsSold);
+      document.querySelector("#ending-inventory").textContent = whole.format(result.endingInventory);
+      document.querySelector("#lost-sales").textContent = whole.format(result.lostSales);
+      document.querySelector("#projected-revenue").textContent = money.format(result.revenue);
+      document.querySelector("#projected-profit").textContent = money.format(result.profit);
+      document.querySelector("#projected-margin").textContent = percent.format(result.margin);
       const callout = document.querySelector("#decision-callout");
-      const pill = document.querySelector("#decision-pill");
-      callout.className = `decision-callout ${state}`;
-      pill.className = `pill ${state}`;
-      pill.textContent = state === "positive" ? "Improves profit" : state === "negative" ? "Worsens profit" : "No change";
-      document.querySelector(".callout-icon").textContent = state === "positive" ? "↗" : state === "negative" ? "↘" : "→";
-      document.querySelector("#profit-change").textContent = `${change >= 0 ? "+" : "−"}${money.format(Math.abs(change))}`;
-      document.querySelector("#decision-copy").textContent = state === "positive"
-        ? "The proposed price and volume assumptions increase contribution profit."
-        : state === "negative" ? "The proposed assumptions reduce contribution profit; reconsider price or volume." : "The proposed assumptions leave contribution profit unchanged.";
-      const outputs = {
-        "current-price-output": money.format(current.price), "proposed-price-output": money.format(proposed.price),
-        "current-units-output": whole.format(current.units), "proposed-units-output": whole.format(proposed.units),
-        "current-revenue": money.format(current.revenue), "proposed-revenue": money.format(proposed.revenue),
-        "current-profit": money.format(current.profit), "proposed-profit": money.format(proposed.profit),
-        "current-margin": percent.format(current.margin), "proposed-margin": percent.format(proposed.margin)
-      };
-      Object.entries(outputs).forEach(([id, value]) => { document.getElementById(id).textContent = value; });
+      callout.className = `decision-callout ${result.profit >= 0 ? "positive" : "negative"}`;
+      document.querySelector("#profit-change").textContent = money.format(result.profit);
+      document.querySelector("#decision-copy").textContent = result.lostSales > 0
+        ? `Inventory constrains expected sales; estimated lost sales are ${whole.format(result.lostSales)} units.`
+        : "Available inventory is sufficient for the model's predicted demand.";
     }
 
-    function renderBenchmark(productRows, proposedPrice) {
-      const benchmark = closestBenchmark(productRows, proposedPrice);
-      document.querySelector("#benchmark-price").textContent = money.format(benchmark.price);
-      document.querySelector("#benchmark-count").textContent = benchmark.count;
-      document.querySelector("#benchmark-units").textContent = whole.format(benchmark.medianUnits);
-      document.querySelector("#benchmark-margin").textContent = percent.format(benchmark.margin);
-      const exact = Math.abs(benchmark.price - proposedPrice) < 0.005;
-      document.querySelector("#benchmark-note").textContent = exact
-        ? `Exact observed price match for ${product.value}. Results summarize individual historical sales lines.`
-        : `No exact match: ${money.format(benchmark.price)} is the nearest observed ${product.value} price to the proposed ${money.format(proposedPrice)}.`;
-    }
-
-    function renderOptimizer(result, current) {
+    function renderOptimizer(result) {
       const best = result.best;
-      const change = best.profit - current.profit;
       document.querySelector("#optimal-price").textContent = money.format(best.price);
-      document.querySelector("#optimal-units").textContent = whole.format(best.units);
-      document.querySelector("#optimal-revenue").textContent = money.format(best.revenue);
+      document.querySelector("#optimal-demand").textContent = whole.format(best.demand);
+      document.querySelector("#optimal-units").textContent = whole.format(best.unitsSold);
       document.querySelector("#optimal-profit").textContent = money.format(best.profit);
-      const changeNode = document.querySelector("#optimal-change");
-      changeNode.textContent = `${change >= 0 ? "+" : "−"}${money.format(Math.abs(change))}`;
-      changeNode.className = change >= 0 ? "gain" : "loss";
+      document.querySelector("#optimal-lost-sales").textContent = whole.format(best.lostSales);
+      document.querySelector("#optimizer-range").textContent = `Evaluated only within the observed ${product.value} range, ${money.format(result.minimum)}–${money.format(result.maximum)}.`;
       drawChart(result.scenarios, best);
     }
 
@@ -190,74 +149,37 @@
       const ratio = window.devicePixelRatio || 1;
       const width = canvas.clientWidth || 720;
       const height = 270;
-      canvas.width = width * ratio;
-      canvas.height = height * ratio;
-      context.setTransform(ratio, 0, 0, ratio, 0, 0);
-      context.clearRect(0, 0, width, height);
-      const padding = { top: 20, right: 18, bottom: 50, left: 70 };
-      const plotWidth = width - padding.left - padding.right;
-      const plotHeight = height - padding.top - padding.bottom;
-      const profits = scenarios.map((scenario) => scenario.profit);
-      let minProfit = Math.min(...profits, 0);
-      let maxProfit = Math.max(...profits, 0);
-      if (maxProfit === minProfit) maxProfit = minProfit + 1;
-      const profitPad = (maxProfit - minProfit) * 0.08;
-      minProfit -= profitPad;
-      maxProfit += profitPad;
-      const x = (price) => padding.left + ((price - scenarios[0].price) / (scenarios.at(-1).price - scenarios[0].price)) * plotWidth;
-      const y = (profit) => padding.top + ((maxProfit - profit) / (maxProfit - minProfit)) * plotHeight;
-
-      context.strokeStyle = "#dcded8";
-      context.fillStyle = "#65716a";
-      context.font = "11px system-ui, sans-serif";
-      context.lineWidth = 1;
+      canvas.width = width * ratio; canvas.height = height * ratio;
+      context.setTransform(ratio, 0, 0, ratio, 0, 0); context.clearRect(0, 0, width, height);
+      const pad = { top: 20, right: 58, bottom: 45, left: 68 };
+      const plotWidth = width - pad.left - pad.right; const plotHeight = height - pad.top - pad.bottom;
+      const maxProfit = Math.max(...scenarios.map((item) => item.profit), 1); const minProfit = Math.min(...scenarios.map((item) => item.profit), 0);
+      const maxDemand = Math.max(...scenarios.map((item) => item.demand), 1);
+      const x = (price) => pad.left + (price - scenarios[0].price) / (scenarios.at(-1).price - scenarios[0].price) * plotWidth;
+      const py = (value) => pad.top + (maxProfit - value) / (maxProfit - minProfit || 1) * plotHeight;
+      const dy = (value) => pad.top + (maxDemand - value) / maxDemand * plotHeight;
+      context.font = "11px system-ui"; context.fillStyle = "#65716a"; context.strokeStyle = "#dcded8";
       for (let tick = 0; tick <= 4; tick += 1) {
-        const value = minProfit + ((maxProfit - minProfit) * tick / 4);
-        const tickY = y(value);
-        context.beginPath(); context.moveTo(padding.left, tickY); context.lineTo(width - padding.right, tickY); context.stroke();
-        context.textAlign = "right"; context.fillText(compactMoney(value), padding.left - 9, tickY + 4);
+        const y = pad.top + plotHeight * tick / 4; context.beginPath(); context.moveTo(pad.left, y); context.lineTo(width - pad.right, y); context.stroke();
+        context.textAlign = "right"; context.fillText(money.format(maxProfit - (maxProfit - minProfit) * tick / 4), pad.left - 7, y + 4);
+        context.textAlign = "left"; context.fillText(whole.format(maxDemand * (1 - tick / 4)), width - pad.right + 7, y + 4);
       }
-      [0, Math.floor((scenarios.length - 1) / 2), scenarios.length - 1].forEach((index) => {
-        context.textAlign = "center";
-        context.fillText(money.format(scenarios[index].price), x(scenarios[index].price), height - 23);
+      [["#165c45", py, "profit"], ["#9b5d16", dy, "demand"]].forEach(([color, y, key]) => {
+        context.strokeStyle = color; context.lineWidth = 3; context.beginPath();
+        scenarios.forEach((item, index) => index ? context.lineTo(x(item.price), y(item[key])) : context.moveTo(x(item.price), y(item[key]))); context.stroke();
       });
-      context.fillStyle = "#17211b";
-      context.font = "600 11px system-ui, sans-serif";
-      context.fillText("Price", padding.left + plotWidth / 2, height - 5);
-      context.save();
-      context.translate(12, padding.top + plotHeight / 2);
-      context.rotate(-Math.PI / 2);
-      context.fillText("Projected profit", 0, 0);
-      context.restore();
-      context.strokeStyle = "#165c45";
-      context.lineWidth = 3;
-      context.lineJoin = "round";
-      context.beginPath();
-      scenarios.forEach((scenario, index) => {
-        if (index === 0) context.moveTo(x(scenario.price), y(scenario.profit));
-        else context.lineTo(x(scenario.price), y(scenario.profit));
-      });
-      context.stroke();
-      context.fillStyle = "#dce858";
-      context.strokeStyle = "#165c45";
-      context.lineWidth = 3;
-      context.beginPath(); context.arc(x(best.price), y(best.profit), 6, 0, Math.PI * 2); context.fill(); context.stroke();
+      context.fillStyle = "#dce858"; context.strokeStyle = "#165c45"; context.beginPath(); context.arc(x(best.price), py(best.profit), 6, 0, Math.PI * 2); context.fill(); context.stroke();
+      context.fillStyle = "#17211b"; context.textAlign = "center"; context.fillText("Price", pad.left + plotWidth / 2, height - 5);
+      [0, scenarios.length - 1].forEach((index) => context.fillText(money.format(scenarios[index].price), x(scenarios[index].price), height - 22));
     }
 
-    function compactMoney(value) {
-      const absolute = Math.abs(value);
-      const compact = absolute >= 1000 ? `${(absolute / 1000).toFixed(1)}k` : Math.round(absolute).toString();
-      return `${value < 0 ? "−" : ""}€${compact}`;
-    }
-
-    product.addEventListener("change", fillDefaults);
-    form.addEventListener("submit", compare);
+    product.addEventListener("change", fillDefaults); dataset.addEventListener("change", fillDefaults);
+    period.addEventListener("change", () => compare(null, false)); form.addEventListener("submit", compare);
     Object.values(fields).forEach((field) => field.addEventListener("input", (event) => compare(event, false)));
     document.querySelector("#reset-button").addEventListener("click", fillDefaults);
-    window.addEventListener("resize", () => compare(null, false));
-    fillDefaults();
+    window.addEventListener("resize", () => compare(null, false)); fillDefaults();
   }
 
-  window.PricingApp = { calculateScenario, calculateDemand, optimizePrice, validateValues, summariseProduct, closestBenchmark, median };
+  window.PricingApp = { modelFeatures, predictDemand, calculateProjection, optimizePrice, validateValues, summariseProduct };
   if (typeof document !== "undefined") document.addEventListener("DOMContentLoaded", init);
 }());

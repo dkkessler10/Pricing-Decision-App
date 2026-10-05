@@ -47,7 +47,6 @@ input:focus, select:focus { border-color: var(--green); box-shadow: 0 0 0 3px rg
 .input-shell input { padding-left: 29px; }
 .paired { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 12px; }
 .comparison-labels { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 0 0 10px; color: var(--green); font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
-.elasticity-field { margin: 22px 0 0; }
 .cost-field { margin: 18px 0 4px; }
 .calculated-field { height: 45px; display: flex; align-items: center; padding: 0 13px; border: 1px solid #cbd8d0; border-radius: 8px; background: #edf4f0; color: var(--green); font-weight: 800; }
 .error { color: var(--red) !important; }

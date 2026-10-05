@@ -1,126 +1,134 @@
-# Pricing Decision Desk — Version 1
+# Pricing Decision Desk — Version 2
 
-A presentation-ready, browser-based calculator for exploring how a proposed product price could affect demand and contribution profit. The historical layer is built **only** from the Sales worksheets in `Full_Data_Regular.xlsx` and `Full_Data_Extended.xlsx`; price elasticity remains a clearly labeled, user-controlled assumption. The application uses only HTML, CSS, and JavaScript and has no package or build dependencies.
+A static, browser-based pricing tool that predicts product demand, inventory-constrained sales, ending inventory, lost sales, revenue, and contribution profit from `Full_Data_Regular.xlsx` and `Full_Data_Extended.xlsx`. Model training happens offline with a dependency-free Python script; GitHub Pages only loads exported JavaScript parameters and does not require a server or paid service.
 
-## Historical data review
+## Data preparation
 
-### Current source files
+`scripts/train_model.py` reads the workbooks directly as ZIP/XML files and builds a product-by-simulation-step panel. The analytical unit is total demand for one product across all three sales areas in one simulation step.
 
-The repository contains two simulation exports:
+The pipeline uses:
 
-- `Full_Data_Regular.xlsx` is the Regular scenario. Its Sales worksheet contains **692 sales lines**, spanning elapsed simulation steps 3–50.
-- `Full_Data_Extended.xlsx` is the Extended scenario. Its Sales worksheet contains **681 sales lines**, spanning elapsed simulation steps 5–80.
+- **Sales** for delivered units, own price, revenue, cost, product, area, channel, period, and simulation step;
+- **Inventory / Inventory (2)** for opening stock by product, step, storage location, and area;
+- **Market / Market (2)** for quantity-weighted market average price by product and period;
+- **Current Inventory** for the scenario's default available-inventory input;
+- **Current Pricing Conditions** for the default proposed price; and
+- the workbook/run identity and period as model controls.
 
-Both Sales worksheets have the same fields needed by the pricing analysis: product, area, delivered quantity, net price, net value, cost, currency, and simulation keys. `data.js` is a reduced export of all **1,373** Sales rows. Each embedded row retains a `dataset` label (`Regular` or `Extended`) so its origin remains auditable.
+The two Sales worksheets contribute 692 Regular and 681 Extended sales lines. Aggregation produces 744 product-step observations before inventory screening.
 
-The browser pools the two scenarios for product defaults and nearest-price benchmarks. Pooling supplies the broadest descriptive history without treating either simulation as a causal experiment. The product helper text also shows how many selected-product rows came from each file.
+### Demand versus realized sales
 
-Other workbook sheets contain inventory, purchasing, market, company-valuation, and operational data. They provide useful simulation context but do not establish a controlled price/demand relationship, so they are not included in the browser's pricing calculations.
+Delivered units can understate customer demand when stock is unavailable. For each product-step, the pipeline compares delivered units in North, South, and West with the corresponding regional opening inventory. It flags an observation when a region has positive sales and opening inventory is no more than 105% of delivered units. This conservative rule removes **285 potentially inventory-constrained observations** rather than teaching the model that constrained sales represent low demand. The remaining **459 observations** train the final model.
 
-### Regular versus Extended
+This screen is imperfect because stock transfers can occur within a step and the workbooks do not contain lost-order or unconstrained-demand records. Predictions therefore remain model estimates, not direct measurements of latent customer demand.
 
-| Dataset | Sales lines | Delivered units | Revenue | Recorded cost | Contribution | Contribution margin |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Regular | 692 | 26,311 | €1,164,320.57 | €1,060,975.86 | €103,344.71 | 8.88% |
-| Extended | 681 | 27,213 | €1,164,845.82 | €1,004,966.81 | €159,879.01 | 13.73% |
-| **Combined app history** | **1,373** | **53,524** | **€2,329,166.39** | **€2,065,942.67** | **€263,223.72** | **11.30%** |
+## Model selection
 
-The Extended scenario has similar revenue but higher delivered volume and contribution than Regular. That difference is descriptive: the files represent different simulation scenarios and time horizons, so it should not be attributed to price alone.
+Three intentionally simple approaches were compared on the same chronological holdout. The final 20% of usable steps in each simulation were held out; earlier observations were used for candidate training.
 
-Across both Sales worksheets:
+| Candidate | Holdout MAE | Holdout RMSE | Holdout WAPE |
+| --- | ---: | ---: | ---: |
+| Product/period baseline | 42.2 units | 57.5 units | 62.2% |
+| **Linear ridge regression** | **41.8 units** | **57.2 units** | **61.6%** |
+| Log-linear ridge regression | 46.4 units | 65.2 units | 68.4% |
 
-- `NET_VALUE = NET_PRICE × QUANTITY_DELIVERED` to cent-level precision.
-- `QUANTITY` equals `QUANTITY_DELIVERED` on every sales line, so the app uses delivered quantity as historical units.
-- Contribution is calculated as `NET_VALUE − COST` because the current exports do not contain a separate `Margin` column.
-- Historical unit cost varies within products. The editable cost default is therefore total pooled cost divided by total pooled delivered units for the selected product.
+The linear ridge model was selected because it performed best on all three holdout metrics and remains explainable. It predicts units from:
 
-### Combined product benchmarks and defaults
+- product indicators;
+- simulation dataset/run;
+- a linear period trend;
+- a separate own-price slope for each product; and
+- own price relative to the quantity-weighted market price.
 
-| Product | Sales lines | Distinct prices | Observed price range | Delivered units | Default current price | Default current units | Weighted avg. unit cost | Contribution margin |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Butter | 245 | 9 | €64.57–€70.86 | 6,346 | €70.86 | 27 | €60.57 | 8.83% |
-| Cheese | 231 | 10 | €89.67–€99.13 | 4,414 | €99.13 | 20 | €83.64 | 8.88% |
-| Cream | 160 | 8 | €74.02–€85.38 | 3,526 | €85.38 | 23 | €72.80 | 6.28% |
-| Ice Cream | 149 | 11 | €47.25–€50.00 | 4,841 | €50.00 | 35 | €43.63 | 9.59% |
-| Milk | 312 | 11 | €25.25–€29.35 | 19,132 | €29.35 | 66 | €23.25 | 15.04% |
-| Yoghurt | 276 | 10 | €28.43–€34.07 | 15,265 | €34.07 | 59.5 | €26.18 | 15.21% |
+The model is refit on all 459 usable observations after selection. Ridge regularization uses a penalty of 1.0 to reduce instability among correlated price features. `model-data.js` contains the fitted coefficients, validation metadata, context defaults, and observed price bounds used by the browser.
 
-The default current price is the highest observed pooled price, default current units are the median delivered units per pooled sales line, and default cost is the pooled weighted average described above. These are convenient starting points, not forecasts.
+### Cross-run check
 
-### Elasticity assessment
+As a harder diagnostic, the same linear specification was trained on one simulation and evaluated on the other:
 
-Although the two files provide multiple observed prices per product, they still do **not** support a reliable fitted price elasticity:
+| Held-out simulation | MAE | RMSE | WAPE |
+| --- | ---: | ---: | ---: |
+| Regular | 42.4 units | 63.4 units | 67.9% |
+| Extended | 61.4 units | 75.5 units | 128.9% |
 
-- Prices occur in a small number of scenario-specific clusters rather than randomized or otherwise controlled price changes.
-- Price changes are entangled with elapsed simulation step, scenario, area, inventory availability, order composition, and other team decisions.
-- The two files have different scenario rules and time horizons. Pooling them in a demand regression would risk assigning scenario differences to price.
-- A sales line is an order line, not a stable product-period demand observation; its quantity can change with the number and composition of orders.
+Generalization across runs is weak, especially by WAPE on Extended. This is prominently reflected in the app's uncertainty language. The model is useful for structured classroom scenario comparison, not precise demand forecasting.
 
-Consequently, the application does not fit or display an elasticity from the workbooks. The user must enter a negative elasticity assumption, and optimized results remain labeled **scenario-based estimates, not predictions**. The closest-price benchmark is strictly descriptive.
+## Browser calculations
 
-## Run the app
-
-### Start
-
-1. Open a terminal in this repository.
-2. Start a static web server:
-
-   ```bash
-   python3 -m http.server 8000
-   ```
-
-3. Open **http://localhost:8000** in a browser.
-
-Opening `index.html` directly also works in most modern browsers, but the local server is the recommended and repeatable presentation method.
-
-### Use
-
-1. Choose one of the six products. The form loads pooled defaults based on both current workbooks and displays the Regular/Extended line counts.
-2. Enter the **current** price and current units. These establish the demand baseline.
-3. Enter the **proposed** price.
-4. Enter a negative **price elasticity of demand** assumption. For example, `-1.5` means that a 1% price increase is associated with approximately a 1.5% decrease in units for a small price change. The exact constant-elasticity formula is used for the calculation.
-5. Review the variable cost per unit and change it if the simulation provides a better forward-looking cost.
-6. Select **Compare scenarios**. The app also updates automatically as valid inputs change.
-7. Review the profit-impact comparison, the pooled closest-price benchmark, and the Price Optimizer. The chart shows price on the X-axis and projected contribution profit on the Y-axis.
-
-Blank, nonnumeric, negative, and zero-price values are rejected with field-specific messages. Elasticity must be negative and no lower than `-10`. Zero units and zero cost are allowed because they can be valid simulation scenarios.
-
-## Calculation method
-
-For both current and proposed scenarios:
+For the selected product, simulation context, period, proposed price, and market average price, the exported model predicts unconstrained customer demand for one simulation step. The app then applies the user's available inventory:
 
 ```text
-Expected new units  = current units × (proposed price ÷ current price) ^ elasticity
-Revenue             = price × calculated units
-Contribution profit = (price − variable cost per unit) × calculated units
-Margin percentage   = contribution profit ÷ revenue
-Change in profit    = proposed contribution profit − current contribution profit
+Predicted demand  = max(0, fitted linear model output)
+Expected sales    = min(predicted demand, available inventory)
+Ending inventory  = max(0, available inventory − expected sales)
+Estimated lost sales = max(0, predicted demand − available inventory)
+Revenue           = proposed price × expected sales
+Contribution profit = (proposed price − variable cost per unit) × expected sales
+Margin            = contribution profit ÷ revenue
 ```
 
-The benchmark finds the selected product's observed price nearest to the proposed price across both datasets, then reports the matching sales-line count, median delivered units per line, and aggregate contribution margin (`sum(NET_VALUE − COST) ÷ sum(NET_VALUE)`).
+Available inventory, market price, and unit cost remain editable because they are scenario facts rather than fitted behavioral parameters. Their defaults come from the selected workbook's current inventory, latest market period, and historical weighted cost.
 
-The Price Optimizer evaluates 301 evenly spaced prices from **50% to 200% of the current price**. At every price it recalculates units using the selected constant elasticity and then calculates contribution profit. It returns the highest-profit evaluated scenario and plots the full profit curve. The bounded range prevents a weak elasticity assumption from producing an unlimited recommended price; a boundary result is a signal to test assumptions, not proof that the boundary is optimal in the real market.
+## Price optimizer and chart
 
-## Assumptions and limitations
+The optimizer evaluates 101 evenly spaced candidate prices between the selected product's minimum and maximum observed prices across both workbooks. It predicts demand at every candidate, caps sales at available inventory, and recommends the candidate with the highest projected contribution profit. Keeping the search inside observed bounds prevents distant price extrapolation.
 
-- `COST` behaves like a variable/attributable sales cost for scenario contribution analysis. This is contribution profit, not whole-company accounting profit.
-- Price, cost, revenue, and profit are in EUR, and `ST` represents one unit.
-- Current units supplied by the user represent demand at the current price and are deliverable; the app does not constrain calculated units by inventory or logistics capacity.
-- A constant-elasticity relationship is a user assumption. The same response is applied throughout the bounded 50%–200% optimizer range.
-- Unit cost stays constant as volume and price change unless the user edits it.
-- A sales line is the comparison unit for median order volume; it is not a full period's demand.
-- The datasets cannot identify a robust causal elasticity because prices, scenarios, time, and operational decisions vary together.
-- The workbooks do not separate all fixed and variable costs. Treating recorded sales cost as variable is useful for a classroom scenario, not a full P&L forecast.
-- The nearest-price benchmark is descriptive and does not claim the proposed scenario will reproduce historical volume or margin.
-- The optimizer is highly sensitive to elasticity and cost assumptions and does not model taxes, discounts, capacity, spoilage, stockouts, or cross-product effects.
-- The app is static: if either workbook changes, `data.js` and the documented summaries must be regenerated.
+The chart overlays:
+
+- projected contribution profit on the left axis; and
+- predicted customer demand on the right axis.
+
+The highlighted point is the profit-maximizing candidate within the historical price range. Profit remains the objective; no company-valuation target is used.
+
+## Company valuation review
+
+The Company_Valuation data was inspected for a possible later extension:
+
+- Regular provides 50 sequential observations and Extended provides 81.
+- Both contain company valuation, profit, cash, receivables, loans, payables, debt loading, risk rates, and credit rating.
+- The within-file correlation between valuation and profit is approximately 0.80 in each simulation, so there is a visible association worth studying.
+- However, there are only two simulation runs, observations are serially dependent, several financial variables are cumulative or mechanically related, and some fields have little variation (Regular payables are always zero; Extended loans are always zero).
+- A random row split would therefore overstate validation quality, while holding out one of only two runs is not enough to establish generalization or rule out formula leakage.
+
+The data is suitable for exploratory analysis and for designing a future valuation model, but it is **not sufficient to independently validate a valuation objective**. Contribution profit remains the optimizer objective.
+
+## Run and reproduce
+
+Run the static site:
+
+```bash
+python3 -m http.server 8000
+```
+
+Then open `http://localhost:8000`.
+
+Regenerate the model artifact after either workbook changes:
+
+```bash
+python3 scripts/train_model.py
+node tests.js
+```
+
+The training script requires only Python's standard library. The published page loads `data.js`, `model-data.js`, and `app.js` directly in the browser.
+
+## Important limitations
+
+- Historical prices were chosen by simulation participants rather than randomly assigned, so price coefficients can still reflect unmeasured strategy and timing differences.
+- The model controls for product, dataset, period, and market price, but it cannot capture promotions, competitors, customer identity, service levels, or all inventory movements.
+- Stockout screening uses opening regional inventory and delivered units; in-step transfers and unavailable lost-order records limit how precisely constrained demand can be identified.
+- Validation errors are large, and cross-run performance is weak. Use estimates to compare bounded scenarios, not as guaranteed forecasts.
+- A prediction covers one simulation step across all sales areas. It is not an order-line or full-game forecast.
+- Recorded `COST` is treated as variable/attributable cost; contribution profit is not whole-company accounting profit.
+- Candidate prices remain inside historical product bounds, but sparse observations within those bounds still make some interpolations uncertain.
 
 ## Project files
 
-- `index.html` — semantic application structure and current-source labels.
+- `index.html` — static model inputs, projections, optimizer, and chart.
 - `styles.css` — responsive presentation styling.
-- `app.js` — validation, calculations, pooled historical summaries, and UI behavior.
-- `data.js` — reduced combined Sales data from the Regular and Extended files.
-- `tests.js` — dependency-free checks for calculations, validation, and current-data defaults.
-- `Full_Data_Regular.xlsx` — Regular simulation source workbook.
-- `Full_Data_Extended.xlsx` — Extended simulation source workbook.
+- `app.js` — browser prediction, inventory constraint, profit calculation, optimization, and charting.
+- `data.js` — reduced combined historical Sales rows used for cost defaults.
+- `model-data.js` — generated model coefficients, validation metrics, contexts, and price bounds.
+- `scripts/train_model.py` — reproducible workbook preparation, stockout screening, training, validation, and export.
+- `tests.js` — dependency-free model and browser-calculation tests.
+- `Full_Data_Regular.xlsx` and `Full_Data_Extended.xlsx` — the only source workbooks.

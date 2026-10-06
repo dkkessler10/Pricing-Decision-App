@@ -1,128 +1,195 @@
-# Pricing Decision Desk — Version 1
+# Pricing Decision Desk — Version 2
 
-A presentation-ready, browser-based calculator for exploring how a proposed product price could affect demand and contribution profit. It combines the historical sales in `Full Data_0924.xlsx` with a clearly labeled, user-controlled price-elasticity assumption. The application uses only HTML, CSS, and JavaScript and has no package or build dependencies.
+A static, browser-based decision tool answering one question:
 
-## Historical data review
+> **If I change this product's price by X%, what do the historical data suggest could happen to sales, remaining inventory, and profit—including a realistic range of outcomes?**
 
-### What is in the workbook
+The app uses only `Full_Data_Regular.xlsx` and `Full_Data_Extended.xlsx`. The two simulations are pooled behind the scenes; users do not need to select a run or configure modeling variables.
 
-The workbook contains 11 sheets. The pricing analysis uses the **Sales** sheet because it is the only row-level table that joins price, delivered units, revenue, cost, and margin. Its 173 sales lines cover simulation steps 5–30, six dairy products, three sales areas (North, South, and West), one distribution channel, and EUR currency.
+## Simplified workflow
 
-The Sales columns are:
+The interface asks for four inputs:
 
-| Group | Columns |
-| --- | --- |
-| Row and simulation keys | `ID`, `ROW_ID`, `SALES_ORGANIZATION`, `SIM_ROUND`, `SIM_STEP`, `SIM_DATE`, `SIM_PERIOD`, `SIM_ELAPSED_STEPS` |
-| Order and location | `SALES_ORDER_NUMBER`, `LINE_ITEM`, `STORAGE_LOCATION`, `AREA`, `DISTRIBUTION_CHANNEL` |
-| Product | `MATERIAL_NUMBER`, `MATERIAL_DESCRIPTION` |
-| Units and price | `QUANTITY`, `QUANTITY_DELIVERED`, `UNIT`, `NET_PRICE` |
-| Financial outcomes | `NET_VALUE`, `COST`, `CURRENCY`, `Margin` |
+1. **Product**
+2. **Current price**, prefilled from the mean of the two workbooks' latest Current Pricing Conditions and editable
+3. **Price change percentage**, such as −10%, −5%, +5%, +10%, or +20%
+4. **Starting inventory**, prefilled from the mean of the latest Regular and Extended inventory snapshots and editable
 
-Other workbook sheets provide margin and sales pivots, historical and current inventory, company valuation, financial postings, and current-inventory KPIs. They are useful operational context, but they do not add a defensible causal price/demand relationship, so V1 does not mix them into its pricing calculation.
+Defaults are applied only on initial page load and when the selected product changes. After that, the visible Current Price, Price Change, and Starting Inventory fields are the calculation source of truth; comparing or recalculating never restores defaults.
 
-### Useful relationships found
-
-Across the 173 Sales rows:
-
-- Delivered volume is **6,803 units**, revenue is **€293,903.96**, recorded cost is **€245,849.20**, and contribution (`Margin`) is **€48,054.76**, or **16.35% of revenue**.
-- Every row satisfies `NET_VALUE = NET_PRICE × QUANTITY_DELIVERED` to cent-level precision.
-- Every row satisfies `Margin = NET_VALUE − COST` to cent-level precision.
-- `QUANTITY` equals `QUANTITY_DELIVERED` on every row, so V1 uses delivered quantity as the historical units measure.
-- Historical unit cost varies slightly within each product. The app therefore uses total historical cost divided by total delivered units for the selected product as its editable default variable cost.
-
-| Product | Sales lines | Observed prices | Delivered units | Weighted avg. unit cost | Contribution margin |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Butter | 30 | €68.44, €70.86 | 738 | €60.89 | 11.30% |
-| Cheese | 22 | €96.40, €99.13 | 436 | €84.39 | 13.09% |
-| Cream | 14 | €80.68, €85.38 | 308 | €73.19 | 9.95% |
-| Ice Cream | 15 | €50.00 | 494 | €43.85 | 12.30% |
-| Milk | 48 | €29.35 | 2,600 | €23.51 | 19.89% |
-| Yoghurt | 44 | €32.76, €34.07 | 2,227 | €26.39 | 21.48% |
-
-### Elasticity assessment
-
-There is **not enough within-product price variation to estimate price elasticity responsibly**:
-
-- Milk and Ice Cream have only one observed price, making a within-product price response impossible to estimate.
-- Butter, Cheese, Cream, and Yoghurt each have only two price points. The samples are also uneven: Butter has 27 lines at €68.44 and only 3 at €70.86; Cream has 12 at €80.68 and only 2 at €85.38.
-- Higher-price rows generally have lower average units per line, most visibly for Cheese (21.6 units at €96.40 versus 16.0 at €99.13). However, this is an uncontrolled association. Area, time, order composition, inventory availability, and other simulation decisions can all affect line volume.
-- Comparing Milk's price and volume with Cheese's, for example, would confound price response with fundamental product differences. The app never estimates elasticity across products.
-
-Consequently, the application does **not** present a fitted elasticity as a historical fact. It asks the user to enter a negative elasticity assumption and labels every optimized result as a **scenario-based estimate, not a prediction**. The closest-price benchmark remains strictly descriptive.
-
-## Run the app
-
-### Start
-
-1. Open a terminal in this repository.
-2. Start a static web server:
-
-   ```bash
-   python3 -m http.server 8000
-   ```
-
-3. Open **http://localhost:8000** in a browser.
-
-Opening `index.html` directly also works in most modern browsers, but the local server is the recommended and repeatable presentation method.
-
-### Use
-
-1. Choose one of the six products. The form loads the product's highest observed price, median units per historical sales line, and weighted historical unit cost as convenient starting values.
-2. Enter the **current** price and current units. These establish the demand baseline.
-3. Enter the **proposed** price.
-4. Enter a negative **price elasticity of demand** assumption. For example, `-1.5` means that a 1% price increase is associated with approximately a 1.5% decrease in units for a small price change. The exact constant-elasticity formula is used for the calculation.
-5. Review the variable cost per unit and change it if the simulation provides a better forward-looking cost.
-6. Select **Compare scenarios**. The app also updates automatically as valid inputs change.
-7. Present the profit-impact comparison, the closest observed historical benchmark, and the Price Optimizer. The chart shows price on the X-axis and projected contribution profit on the Y-axis.
-
-Blank, nonnumeric, negative, and zero-price values are rejected with field-specific messages. Elasticity must be negative and no lower than `-10`. Zero units and zero cost are allowed because they can be valid simulation scenarios.
-
-### Stop
-
-Return to the terminal running the server and press **Ctrl+C**. The page can then be closed.
-
-## Calculation method
-
-For both current and proposed scenarios:
+The proposed price is calculated automatically:
 
 ```text
-Expected new units  = current units × (proposed price ÷ current price) ^ elasticity
-Revenue             = price × calculated units
-Contribution profit = (price − variable cost per unit) × calculated units
-Margin percentage   = contribution profit ÷ revenue
-Change in profit    = proposed contribution profit − current contribution profit
+Proposed price = current price × (1 + price change percentage ÷ 100)
 ```
 
-The benchmark finds the selected product's observed price nearest to the proposed price, then reports the number of matching historical sales lines, their median delivered units per line, and their aggregate contribution margin (`sum(Margin) ÷ sum(NET_VALUE)`).
+The browser compares current and proposed expected outcomes side by side, shows a plausible low/expected/high range for the proposed price, and recommends the supported price with the highest expected contribution profit.
 
-The Price Optimizer evaluates 301 evenly spaced prices from **50% to 200% of the current price**. At every price it recalculates units using the selected constant elasticity and then calculates contribution profit. It returns the highest-profit evaluated scenario and plots the full profit curve. The bounded range prevents an optimizer with a weak elasticity assumption from recommending an unlimited price, but a result at either boundary is a signal to test different assumptions rather than a claim that the boundary is optimal in the real market.
+## Historical analytical dataset
 
-## Assumptions
+`scripts/train_model.py` reads the two workbooks directly as ZIP/XML files using only Python's standard library. It combines:
 
-- `COST` behaves like a variable/attributable sales cost for scenario contribution analysis. The workbook calls the residual `Margin`; V1 labels it contribution profit to distinguish it from whole-company accounting profit.
-- Price, cost, revenue, and profit are in EUR, and `ST` represents one unit.
-- Current units supplied by the user represent demand at the current price and are deliverable; the app does not constrain calculated units by inventory or logistics capacity.
-- A constant-elasticity relationship is a scenario assumption. The same response is applied throughout the bounded 50%–200% price range.
-- Unit cost stays constant as volume and price change unless the user edits it.
-- A historical sales line is the comparison unit for median order volume; it is not a full period's demand.
-- The embedded `data.js` is a faithful, reduced export of the 173 Sales rows containing only the fields needed by the browser app.
+- **Sales** for delivered units, own price, revenue, cost, product, area, channel, period, and simulation step;
+- **Inventory / Inventory (2)** for opening stock by product, step, storage location, and area;
+- **Market / Market (2)** for quantity-weighted market price by product and period;
+- **Current Inventory** for starting-inventory defaults; and
+- **Current Pricing Conditions** for current-price defaults.
 
-## Limitations
+The Sales worksheets contain 692 Regular and 681 Extended rows. They are aggregated into 744 product-by-simulation-step observations across the six products.
 
-- There are only 173 lines from one simulation round and 26 observed steps; this is not enough to generalize confidently.
-- The dataset has one or two price points per product, so it cannot identify a robust price elasticity or predict demand at a new price.
-- Sales-line volume may be affected by region, time, customer/order composition, inventory constraints, competitor actions, promotion, and simulation choices not controlled in this analysis.
-- The workbook does not separate all fixed and variable costs. Treating recorded sales cost as variable is useful for a classroom scenario, not a full P&L forecast.
-- The nearest-price benchmark is descriptive. It does not claim the proposed scenario will reproduce past volume or margin.
-- Optimizer results are highly sensitive to the elasticity and cost assumptions. They are scenario-based estimates, not recommended real-world prices or forecasts.
-- V1 does not model taxes, discounts, service levels, capacity, spoilage, stockouts, or cross-product effects.
-- The app is static: when the workbook changes, `data.js` must be regenerated before the browser reflects those changes.
+### Separating demand from inventory-constrained sales
+
+Delivered sales may understate demand when inventory is scarce. For every product-step, the training pipeline compares delivered units in North, South, and West with regional opening inventory. An observation is flagged when a region has positive sales and opening inventory is no more than 105% of its delivered units.
+
+The model excludes **285 potentially constrained observations** and trains on the remaining **459 observations**. This prevents obvious stock-limited sales from being interpreted as weak customer demand. The screen remains approximate because in-step stock transfers exist and the workbooks do not record lost customer orders.
+
+## Demand model
+
+The selected model is a small linear ridge regression. It uses these internal features:
+
+- product;
+- simulation run;
+- a linear period trend;
+- a separate absolute-price slope for each product; and
+- price relative to the period's market-average price.
+
+Run, period, and market price remain internal because they improve the historical specification but are not useful primary decision inputs. Browser predictions pool both simulations by averaging the fitted prediction over all usable historical run/period/market-price contexts for the selected product.
+
+### Model comparison and validation
+
+Candidate models were trained on earlier usable steps and evaluated on the final 20% of usable steps from each simulation.
+
+| Candidate | Holdout MAE | Holdout RMSE | Holdout WAPE |
+| --- | ---: | ---: | ---: |
+| Product/period baseline | 42.2 units | 57.5 units | 62.2% |
+| **Linear ridge regression** | **41.8 units** | **57.2 units** | **61.6%** |
+| Log-linear ridge regression | 46.4 units | 65.2 units | 68.4% |
+
+The linear ridge model had the best held-out result and was selected for its relative performance, stability, explainability, and small static-browser footprint. Its errors are still large, so the outputs are scenario estimates rather than precise forecasts.
+
+A separate cross-run diagnostic trained on one simulation and tested on the other:
+
+| Held-out simulation | MAE | RMSE | WAPE |
+| --- | ---: | ---: | ---: |
+| Regular | 42.4 units | 63.4 units | 67.9% |
+| Extended | 61.4 units | 75.5 units | 128.9% |
+
+Weak cross-run generalization is an important limitation and a reason to display ranges rather than a single certain-looking result.
+
+### Extreme-price extrapolation review
+
+The fitted model is linear in own price and relative market price, followed by a zero floor. It is not a saturation model and it did not learn a price at which demand must become zero. At the pooled default price, a +40% scenario is far beyond every product's observed evidence:
+
+| Product | Observed prices | Historical range | Range width vs. default | Default × 1.40 | Above historical max | Observed-range widths beyond max |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Butter | 9 | €64.57–€70.86 | 9.6% | €92.15 | 30.0% | 3.4× |
+| Cheese | 10 | €89.67–€99.13 | 10.5% | €126.24 | 27.3% | 2.9× |
+| Cream | 8 | €74.02–€85.38 | 14.8% | €107.72 | 26.2% | 2.0× |
+| Ice Cream | 11 | €47.25–€50.00 | 5.7% | €67.89 | 35.8% | 6.5× |
+| Milk | 11 | €25.25–€29.35 | 14.8% | €38.70 | 31.9% | 2.3× |
+| Yoghurt | 10 | €28.43–€34.07 | 18.4% | €42.86 | 25.8% | 1.6× |
+
+All six fitted equations still return positive demand at +40%. Butter, Cheese, Cream, and Ice Cream have negative fitted marginal price slopes and eventually hit the model's zero floor at still-higher prices. Milk and Yoghurt have positive net fitted slopes after combining their product-price and relative-market-price terms, so their equations increase without bound at arbitrarily high prices. That is an observational confounding artifact—not credible evidence that very high prices increase demand.
+
+The workbooks contain only 8–11 distinct product prices over narrow bands of roughly 5.7%–18.4% around the pooled defaults. Prices also move with run, period, market conditions, and simulation decisions. This is not enough within-product variation to support a +40% causal price response.
+
+The app therefore classifies prediction support explicitly:
+
+- **Supported prediction:** the price is inside the observed product range and normal forecasts are shown.
+- **Lower-confidence extrapolation:** the price is outside the observed range, but no more than one full observed price-span beyond its nearest boundary; forecasts remain visible with a warning.
+- **Insufficient historical evidence:** the price is more than one full observed price-span beyond the nearest boundary. The proposed price remains visible, but demand, sales, inventory, revenue, profit, margin, profit change, and Low / Expected / High projections are withheld rather than displayed with misleading precision.
+
+## Low, expected, and high outcomes
+
+The ranges come from genuine out-of-sample errors, not absolute historical minima or maxima:
+
+1. Fit the selected specification on the earlier training steps.
+2. Predict the chronologically held-out observations.
+3. Calculate residuals as `actual demand − predicted demand`.
+4. Use the held-out residual distribution's **20th percentile** for the low-sales adjustment and **80th percentile** for the high-sales adjustment.
+5. Add those adjustments to the pooled central prediction, with demand floored at zero.
+
+In the current model artifact, the adjustments are approximately −43.0 units and +25.0 units. These bounds describe historical simulation variability; they are not confidence guarantees.
+
+For each demand outcome, the app applies inventory after predicting customer demand:
+
+```text
+Expected units sold = min(predicted customer demand, starting inventory)
+Ending inventory    = max(0, starting inventory − expected units sold)
+Revenue             = price × expected units sold
+Contribution profit = (price − pooled weighted unit cost) × expected units sold
+Contribution margin = contribution profit ÷ revenue
+```
+
+Variable unit cost is intentionally kept out of the primary interface. It is the pooled historical cost divided by pooled delivered units for the selected product.
+
+## Current versus proposed results
+
+When a scenario is supported or a limited extrapolation, current and proposed results show:
+
+- price;
+- predicted customer demand;
+- expected units sold after the inventory limit;
+- ending inventory;
+- revenue;
+- contribution profit; and
+- contribution margin.
+
+The proposed-price callout reports expected profit change in euros and percentage terms. A separate table shows low-sales, expected, and high-sales outcomes, including minimum/expected/maximum ending inventory and projected profit. When the proposed price enters the unsupported zone, the app keeps the price visible but replaces those proposed metrics and ranges with unavailable markers and an insufficient-evidence explanation.
+
+## Price optimizer and chart
+
+The optimizer evaluates 101 evenly spaced candidate prices between the selected product's historical minimum and maximum observed prices. For every candidate it calculates low, expected, and high demand; inventory-constrained sales; ending inventory; and contribution profit.
+
+The recommendation maximizes **expected contribution profit** and also reports its plausible low-to-high profit range. The chart shows:
+
+- expected contribution profit;
+- a shaded low-to-high profit band;
+- expected customer demand; and
+- the expected-profit-maximizing price.
+
+The optimizer never searches beyond the observed product range, so an extrapolated or insufficient-evidence price cannot become a high-confidence recommendation. A manually proposed price outside that range remains calculable for exploration, but the support badge and warning distinguish a near extrapolation from a far-out **insufficient historical evidence** scenario. No unsupported demand behavior is invented for distant prices.
+
+## Static GitHub Pages deployment
+
+Training is a development step only:
+
+```bash
+python3 scripts/train_model.py
+node tests.js
+```
+
+The script exports coefficients, pooled prediction contexts, residual percentiles, defaults, validation metrics, and supported price ranges to `model-data.js`. The published page loads that artifact directly and requires no Python runtime, backend, API, credentials, or paid service.
+
+To run locally:
+
+```bash
+python3 -m http.server 8000
+```
+
+Then open `http://localhost:8000`.
+
+## Important limitations
+
+- Historical prices were chosen by simulation participants, not randomly assigned. Price effects may include unmeasured strategy or timing differences.
+- Stockout screening uses regional opening inventory and delivered units; in-step transfers and missing lost-order records limit identification of true unconstrained demand.
+- Holdout and cross-run errors are large. Use the app to compare bounded classroom scenarios, not as a guaranteed sales forecast.
+- A prediction represents total product demand for one simulation step across all three sales areas.
+- Pooling historical contexts deliberately hides run-specific controls from the UI, but an average context may not represent a future simulation exactly.
+- Recorded `COST` is treated as variable/attributable cost. Contribution profit is not whole-company accounting profit.
+- Predictions outside the displayed historical price range are extrapolations and are explicitly flagged as less reliable.
+
+## Company valuation review
+
+The Company_Valuation sheets contain 50 sequential Regular observations and 81 Extended observations. Valuation has an approximately 0.80 within-file correlation with profit, but there are only two runs, observations are serially dependent, several financial fields are cumulative or mechanically related, and some variables have almost no within-run variation. That evidence is insufficient for an independently validated valuation objective, so the optimizer continues to maximize contribution profit.
 
 ## Project files
 
-- `index.html` — semantic application structure.
+- `index.html` — simplified inputs, current/proposed comparison, outcome range, optimizer, and chart.
 - `styles.css` — responsive presentation styling.
-- `app.js` — validation, calculations, historical summaries, and UI behavior.
-- `data.js` — reduced historical Sales data used by the browser.
-- `tests.js` — dependency-free checks for the calculation and validation functions.
-- `Full Data_0924.xlsx` — original source workbook.
+- `app.js` — pooled demand prediction, range construction, inventory calculations, optimization, and charting.
+- `model-data.js` — generated coefficients, historical contexts, defaults, residual percentiles, validation metrics, and price bounds.
+- `scripts/train_model.py` — reproducible data preparation, constraint screening, training, validation, and export.
+- `tests.js` — dependency-free behavior and calculation tests.
+- `data.js` — auditable reduced Sales export retained for historical inspection; the simplified browser does not load it.
+- `Full_Data_Regular.xlsx` and `Full_Data_Extended.xlsx` — the only source workbooks.

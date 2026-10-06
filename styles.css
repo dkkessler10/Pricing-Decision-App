@@ -47,7 +47,6 @@ input:focus, select:focus { border-color: var(--green); box-shadow: 0 0 0 3px rg
 .input-shell input { padding-left: 29px; }
 .paired { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 12px; }
 .comparison-labels { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 0 0 10px; color: var(--green); font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
-.elasticity-field { margin: 22px 0 0; }
 .cost-field { margin: 18px 0 4px; }
 .calculated-field { height: 45px; display: flex; align-items: center; padding: 0 13px; border: 1px solid #cbd8d0; border-radius: 8px; background: #edf4f0; color: var(--green); font-weight: 800; }
 .error { color: var(--red) !important; }
@@ -124,3 +123,19 @@ footer code { color: var(--ink); }
   .metric-row { grid-template-columns: 1.2fr 1fr 1fr; font-size: 12px; }
   .optimizer-grid { grid-template-columns: 1fr 1fr; }
 }
+
+.proposed-price-box { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 20px 0; padding: 16px 18px; border-radius: 12px; background: #f3f5ee; }
+.proposed-price-box strong { color: var(--green); font-size: 1.65rem; }
+.proposed-price-box small { color: var(--muted); }
+.range-warning { margin: 18px 0; padding: 12px 14px; border: 1px solid #d69b42; border-radius: 9px; background: #fff6df; color: #704812; }
+.range-warning[hidden] { display: none; }
+.outcome-range { margin-top: 24px; }
+.range-row { grid-template-columns: 1.4fr repeat(3, 1fr); }
+.range-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+.range-summary > div { display: grid; gap: 6px; padding: 13px; border-radius: 9px; background: #f5f6f2; }
+.range-summary span { color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; }
+.range-summary strong { display: flex; justify-content: space-between; font-size: .9rem; }
+.range-summary i { color: var(--muted); font-style: normal; font-weight: 500; }
+@media (max-width: 620px) { .range-summary { grid-template-columns: 1fr; } .range-row { font-size: .78rem; } }
+
+.pill.warning { background: #fff0cd; color: #704812; }

@@ -81,6 +81,34 @@
     return errors;
   }
 
+
+  function readFormValues(fields) {
+    return Object.fromEntries(Object.entries(fields).map(([key, input]) => [key, input.value]));
+  }
+
+  function applyProductDefaults(model, product, fields) {
+    const defaults = model.defaults[product];
+    fields.currentPrice.value = defaults.currentPrice.toFixed(2);
+    fields.priceChange.value = "5";
+    fields.inventory.value = String(Math.round(defaults.inventory));
+  }
+
+  function calculateDecision(model, product, values) {
+    const currentPrice = Number(values.currentPrice);
+    const priceChange = Number(values.priceChange);
+    const inventory = Number(values.inventory);
+    const proposedPrice = calculateProposedPrice(currentPrice, priceChange);
+    return {
+      currentPrice,
+      priceChange,
+      inventory,
+      proposedPrice,
+      current: calculateScenario(model, product, currentPrice, inventory),
+      proposed: calculateScenario(model, product, proposedPrice, inventory),
+      optimizer: optimizePrice(model, product, inventory)
+    };
+  }
+
   function init() {
     const model = window.DEMAND_MODEL;
     const form = document.querySelector("#scenario-form");
@@ -94,15 +122,12 @@
     };
     product.innerHTML = model.products.map((name) => `<option value="${name}">${name}</option>`).join("");
 
-    function fillDefaults() {
-      const defaults = model.defaults[product.value];
-      fields.currentPrice.value = defaults.currentPrice.toFixed(2);
-      fields.priceChange.value = "5";
-      fields.inventory.value = String(Math.round(defaults.inventory));
+    function loadProductDefaults() {
+      applyProductDefaults(model, product.value, fields);
       const range = model.priceRanges[product.value];
       document.querySelector("#product-context").textContent = `Historical price range ${money.format(range.minimum)}–${money.format(range.maximum)}.`;
       document.querySelector("#inventory-context").textContent = "Prefilled from the average of the latest Regular and Extended inventory snapshots.";
-      compare();
+      recalculateFromInputs();
     }
 
     function clearErrors() {
@@ -113,10 +138,10 @@
       document.querySelector("#form-message").textContent = "";
     }
 
-    function compare(event, focusOnError = true) {
-      if (event) event.preventDefault();
+    function recalculateFromInputs(event, focusOnError = true) {
+      if (event?.type === "submit") event.preventDefault();
       clearErrors();
-      const values = Object.fromEntries(Object.entries(fields).map(([key, input]) => [key, input.value]));
+      const values = readFormValues(fields);
       const errors = validateValues(values);
       if (Object.keys(errors).length) {
         Object.entries(errors).forEach(([key, message]) => {
@@ -127,15 +152,11 @@
         if (focusOnError) fields[Object.keys(errors)[0]].focus();
         return;
       }
-      const currentPrice = Number(values.currentPrice);
-      const proposedPrice = calculateProposedPrice(currentPrice, Number(values.priceChange));
-      const inventory = Number(values.inventory);
-      const current = calculateScenario(model, product.value, currentPrice, inventory);
-      const proposed = calculateScenario(model, product.value, proposedPrice, inventory);
-      renderComparison(current.expected, proposed.expected, Number(values.priceChange));
-      renderRange(proposed);
-      renderWarning(proposedPrice);
-      renderOptimizer(optimizePrice(model, product.value, inventory));
+      const decision = calculateDecision(model, product.value, values);
+      renderComparison(decision.current.expected, decision.proposed.expected, decision.priceChange);
+      renderRange(decision.proposed);
+      renderWarning(decision.proposedPrice);
+      renderOptimizer(decision.optimizer);
     }
 
     function renderComparison(current, proposed, changePercent) {
@@ -225,13 +246,13 @@
       [0, scenarios.length - 1].forEach((index) => context.fillText(money.format(scenarios[index].price), x(scenarios[index].price), height - 22));
     }
 
-    product.addEventListener("change", fillDefaults); dataset.addEventListener("change", fillDefaults);
-    period.addEventListener("change", () => compare(null, false)); form.addEventListener("submit", compare);
-    Object.values(fields).forEach((field) => field.addEventListener("input", (event) => compare(event, false)));
-    document.querySelector("#reset-button").addEventListener("click", fillDefaults);
-    window.addEventListener("resize", () => compare(null, false)); fillDefaults();
+    product.addEventListener("change", loadProductDefaults);
+    form.addEventListener("submit", recalculateFromInputs);
+    Object.values(fields).forEach((field) => field.addEventListener("input", () => recalculateFromInputs(null, false)));
+    window.addEventListener("resize", () => recalculateFromInputs(null, false));
+    loadProductDefaults();
   }
 
-  window.PricingApp = { calculateProposedPrice, modelFeatures, predictDemand, demandScenarios, calculateProjection, calculateScenario, priceRangeWarning, optimizePrice, validateValues };
+  window.PricingApp = { calculateProposedPrice, modelFeatures, predictDemand, demandScenarios, calculateProjection, calculateScenario, priceRangeWarning, optimizePrice, validateValues, readFormValues, applyProductDefaults, calculateDecision };
   if (typeof document !== "undefined") document.addEventListener("DOMContentLoaded", init);
 }());

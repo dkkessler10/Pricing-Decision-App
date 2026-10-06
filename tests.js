@@ -7,7 +7,8 @@ vm.runInContext(fs.readFileSync("model-data.js", "utf8"), context);
 vm.runInContext(fs.readFileSync("app.js", "utf8"), context);
 const {
   calculateProposedPrice, modelFeatures, predictDemand, demandScenarios,
-  calculateProjection, calculateScenario, priceRangeWarning, optimizePrice, validateValues
+  calculateProjection, calculateScenario, priceRangeWarning, optimizePrice, validateValues,
+  readFormValues, applyProductDefaults, calculateDecision
 } = context.window.PricingApp;
 const model = context.window.DEMAND_MODEL;
 
@@ -67,4 +68,49 @@ assert.equal(invalid.currentPrice, "Required");
 assert.equal(invalid.priceChange, "Must be greater than −100%");
 assert.equal(invalid.inventory, "Must be 0 or more");
 assert.deepEqual({ ...validateValues({ currentPrice: "30", priceChange: "5", inventory: "0" }) }, {});
+
+// Regression: defaults are a one-time/product-change action; calculations only read visible values.
+const visibleFields = {
+  currentPrice: { value: "" },
+  priceChange: { value: "" },
+  inventory: { value: "" }
+};
+applyProductDefaults(model, "Ice Cream", visibleFields);
+assert.equal(visibleFields.currentPrice.value, model.defaults["Ice Cream"].currentPrice.toFixed(2));
+assert.equal(visibleFields.inventory.value, String(Math.round(model.defaults["Ice Cream"].inventory)));
+
+visibleFields.currentPrice.value = "45.00";
+visibleFields.priceChange.value = "10";
+visibleFields.inventory.value = "50";
+const editedValues = readFormValues(visibleFields);
+const editedDecision = calculateDecision(model, "Ice Cream", editedValues);
+assert.equal(editedDecision.currentPrice, 45);
+assert.equal(editedDecision.priceChange, 10);
+assert.equal(editedDecision.inventory, 50);
+assert.ok(Math.abs(editedDecision.proposedPrice - 49.5) < 1e-12);
+for (const scenario of [editedDecision.current, editedDecision.proposed]) {
+  for (const outcome of Object.values(scenario)) {
+    assert.ok(outcome.unitsSold <= 50);
+    assert.ok(outcome.endingInventory >= 0);
+    assert.ok(Math.abs(outcome.endingInventory - (50 - outcome.unitsSold)) < 1e-12);
+  }
+}
+assert.deepEqual({ ...readFormValues(visibleFields) }, { currentPrice: "45.00", priceChange: "10", inventory: "50" });
+assert.ok(editedDecision.optimizer.best.expected.unitsSold <= 50);
+assert.ok(editedDecision.optimizer.best.expected.endingInventory >= 0);
+
+const fivePercentDecision = calculateDecision(model, "Ice Cream", { ...editedValues, priceChange: "5" });
+assert.ok(Math.abs(fivePercentDecision.proposedPrice - 47.25) < 1e-12);
+assert.notEqual(fivePercentDecision.proposed.expected.revenue, editedDecision.proposed.expected.revenue);
+const defaultPriceDecision = calculateDecision(model, "Ice Cream", { ...editedValues, currentPrice: "48.50" });
+assert.notEqual(defaultPriceDecision.current.expected.revenue, editedDecision.current.expected.revenue);
+
+applyProductDefaults(model, "Milk", visibleFields);
+assert.equal(visibleFields.currentPrice.value, model.defaults.Milk.currentPrice.toFixed(2));
+assert.equal(visibleFields.inventory.value, String(Math.round(model.defaults.Milk.inventory)));
+visibleFields.inventory.value = "25";
+const milkOverride = calculateDecision(model, "Milk", readFormValues(visibleFields));
+assert.ok(milkOverride.current.expected.unitsSold <= 25);
+assert.equal(visibleFields.inventory.value, "25");
+
 console.log("All simplified pricing, variability, inventory, optimizer, range-warning, and validation tests passed.");

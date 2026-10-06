@@ -15,6 +15,8 @@ The interface asks for four inputs:
 3. **Price change percentage**, such as −10%, −5%, +5%, +10%, or +20%
 4. **Starting inventory**, prefilled from the mean of the latest Regular and Extended inventory snapshots and editable
 
+Defaults are applied only on initial page load and when the selected product changes. After that, the visible Current Price, Price Change, and Starting Inventory fields are the calculation source of truth; comparing or recalculating never restores defaults.
+
 The proposed price is calculated automatically:
 
 ```text

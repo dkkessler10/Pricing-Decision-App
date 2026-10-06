@@ -76,6 +76,29 @@ A separate cross-run diagnostic trained on one simulation and tested on the othe
 
 Weak cross-run generalization is an important limitation and a reason to display ranges rather than a single certain-looking result.
 
+### Extreme-price extrapolation review
+
+The fitted model is linear in own price and relative market price, followed by a zero floor. It is not a saturation model and it did not learn a price at which demand must become zero. At the pooled default price, a +40% scenario is far beyond every product's observed evidence:
+
+| Product | Observed prices | Historical range | Range width vs. default | Default × 1.40 | Above historical max | Observed-range widths beyond max |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Butter | 9 | €64.57–€70.86 | 9.6% | €92.15 | 30.0% | 3.4× |
+| Cheese | 10 | €89.67–€99.13 | 10.5% | €126.24 | 27.3% | 2.9× |
+| Cream | 8 | €74.02–€85.38 | 14.8% | €107.72 | 26.2% | 2.0× |
+| Ice Cream | 11 | €47.25–€50.00 | 5.7% | €67.89 | 35.8% | 6.5× |
+| Milk | 11 | €25.25–€29.35 | 14.8% | €38.70 | 31.9% | 2.3× |
+| Yoghurt | 10 | €28.43–€34.07 | 18.4% | €42.86 | 25.8% | 1.6× |
+
+All six fitted equations still return positive demand at +40%. Butter, Cheese, Cream, and Ice Cream have negative fitted marginal price slopes and eventually hit the model's zero floor at still-higher prices. Milk and Yoghurt have positive net fitted slopes after combining their product-price and relative-market-price terms, so their equations increase without bound at arbitrarily high prices. That is an observational confounding artifact—not credible evidence that very high prices increase demand.
+
+The workbooks contain only 8–11 distinct product prices over narrow bands of roughly 5.7%–18.4% around the pooled defaults. Prices also move with run, period, market conditions, and simulation decisions. This is not enough within-product variation to support a +40% causal price response.
+
+The app therefore classifies prediction support explicitly:
+
+- **Within historical range:** supported interpolation for this model.
+- **Extrapolation:** outside the observed range, but no more than one full observed price-span beyond its nearest boundary.
+- **Insufficient evidence:** more than one full observed price-span beyond the nearest boundary. Numeric results remain available for exploration, but are labeled exploratory and are not presented as reliable forecasts.
+
 ## Low, expected, and high outcomes
 
 The ranges come from genuine out-of-sample errors, not absolute historical minima or maxima:
@@ -125,11 +148,7 @@ The recommendation maximizes **expected contribution profit** and also reports i
 - expected customer demand; and
 - the expected-profit-maximizing price.
 
-The optimizer never searches beyond the observed product range. A manually proposed price outside that range remains calculable, but the app displays:
-
-> **Outside historical price range — this prediction is less reliable.**
-
-No unsupported demand behavior is invented for distant prices.
+The optimizer never searches beyond the observed product range, so an extrapolated or insufficient-evidence price cannot become a high-confidence recommendation. A manually proposed price outside that range remains calculable for exploration, but the support badge and warning distinguish a near extrapolation from a far-out **insufficient historical evidence** scenario. No unsupported demand behavior is invented for distant prices.
 
 ## Static GitHub Pages deployment
 

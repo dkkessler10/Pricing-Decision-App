@@ -7,7 +7,7 @@ vm.runInContext(fs.readFileSync("model-data.js", "utf8"), context);
 vm.runInContext(fs.readFileSync("app.js", "utf8"), context);
 const {
   calculateProposedPrice, modelFeatures, predictDemand, demandScenarios,
-  calculateProjection, calculateScenario, priceRangeWarning, optimizePrice, validateValues,
+  calculateProjection, calculateScenario, predictionSupport, priceRangeWarning, optimizePrice, validateValues,
   readFormValues, applyProductDefaults, calculateDecision
 } = context.window.PricingApp;
 const model = context.window.DEMAND_MODEL;
@@ -62,6 +62,22 @@ assert.equal(priceRangeWarning(model, "Milk", model.priceRanges.Milk.minimum - 0
 assert.equal(priceRangeWarning(model, "Milk", model.priceRanges.Milk.maximum + 0.01), true);
 assert.equal(priceRangeWarning(model, "Milk", model.priceRanges.Milk.minimum), false);
 assert.equal(priceRangeWarning(model, "Milk", model.priceRanges.Milk.maximum), false);
+
+// +40% is far beyond every product's observed range and cannot be a supported recommendation.
+for (const product of model.products) {
+  const extremePrice = model.defaults[product].currentPrice * 1.40;
+  const support = predictionSupport(model, product, extremePrice);
+  assert.equal(support.level, "insufficient");
+  assert.equal(priceRangeWarning(model, product, extremePrice), true);
+  const productOptimizer = optimizePrice(model, product, model.defaults[product].inventory);
+  assert.ok(productOptimizer.best.price >= model.priceRanges[product].minimum);
+  assert.ok(productOptimizer.best.price <= model.priceRanges[product].maximum);
+  assert.equal(predictionSupport(model, product, productOptimizer.best.price).level, "supported");
+  assert.ok(productOptimizer.scenarios.every((scenario) => predictionSupport(model, product, scenario.price).level === "supported"));
+}
+
+const nearMilkExtrapolation = model.priceRanges.Milk.maximum + (model.priceRanges.Milk.maximum - model.priceRanges.Milk.minimum) / 2;
+assert.equal(predictionSupport(model, "Milk", nearMilkExtrapolation).level, "extrapolation");
 
 const invalid = validateValues({ currentPrice: "", priceChange: "-100", inventory: "-1" });
 assert.equal(invalid.currentPrice, "Required");

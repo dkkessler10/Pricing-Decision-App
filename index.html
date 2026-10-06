@@ -38,7 +38,7 @@
         </form>
 
         <section class="results-card" aria-labelledby="results-title">
-          <div class="section-heading"><div><p class="step">02</p><h2 id="results-title">Current vs proposed</h2></div><span class="pill positive">Model estimate</span></div>
+          <div class="section-heading"><div><p class="step">02</p><h2 id="results-title">Current vs proposed</h2></div><span class="pill positive" id="prediction-support">Within historical range</span></div>
           <div class="decision-callout" id="decision-callout" aria-live="polite"><div class="callout-icon" aria-hidden="true">↗</div><div><p class="callout-label">EXPECTED PROFIT CHANGE</p><strong id="profit-change">—</strong><p><b id="profit-change-percent">—</b> <span id="decision-copy">Change the inputs to compare scenarios.</span></p></div></div>
           <div class="metric-table" role="table" aria-label="Current and proposed expected outcomes">
             <div class="metric-row metric-header"><span>Metric</span><span>Current</span><span>Proposed</span></div>
@@ -53,7 +53,7 @@
 
           <div class="benchmark outcome-range">
             <div class="benchmark-head"><div><p class="step">HISTORICAL VARIABILITY</p><h3>Projected range for proposed price</h3></div><span>20th–80th percentile</span></div>
-            <p>Projected range based on historical simulation variability—not guaranteed outcomes.</p>
+            <p id="range-support-note">Projected range based on historical simulation variability—not guaranteed outcomes.</p>
             <div class="metric-table" role="table" aria-label="Low expected and high proposed-price outcomes">
               <div class="metric-row metric-header"><span>Metric</span><span>Low sales</span><span>Expected</span><span>High sales</span></div>
               <div class="metric-row range-row"><span>Predicted demand</span><strong id="range-demand-low">—</strong><strong id="range-demand-expected">—</strong><strong id="range-demand-high">—</strong></div>

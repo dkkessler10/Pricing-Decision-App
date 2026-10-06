@@ -51,9 +51,18 @@
     return Object.fromEntries(Object.entries(demands).map(([name, demand]) => [name, calculateProjection(demand, inventory, price, unitCost)]));
   }
 
-  function priceRangeWarning(model, product, price) {
+  function predictionSupport(model, product, price) {
     const range = model.priceRanges[product];
-    return price < range.minimum || price > range.maximum;
+    if (price >= range.minimum && price <= range.maximum) {
+      return { level: "supported", distance: 0, range };
+    }
+    const distance = price < range.minimum ? range.minimum - price : price - range.maximum;
+    const historicalSpan = range.maximum - range.minimum;
+    return { level: distance > historicalSpan ? "insufficient" : "extrapolation", distance, range };
+  }
+
+  function priceRangeWarning(model, product, price) {
+    return predictionSupport(model, product, price).level !== "supported";
   }
 
   function optimizePrice(model, product, inventory, steps = 100) {
@@ -155,7 +164,7 @@
       const decision = calculateDecision(model, product.value, values);
       renderComparison(decision.current.expected, decision.proposed.expected, decision.priceChange);
       renderRange(decision.proposed);
-      renderWarning(decision.proposedPrice);
+      renderSupport(decision.proposedPrice);
       renderOptimizer(decision.optimizer);
     }
 
@@ -196,9 +205,27 @@
       document.querySelector("#maximum-profit").textContent = money.format(Math.max(...profits));
     }
 
-    function renderWarning(price) {
+    function renderSupport(price) {
+      const support = predictionSupport(model, product.value, price);
       const warning = document.querySelector("#range-warning");
-      warning.hidden = !priceRangeWarning(model, product.value, price);
+      const badge = document.querySelector("#prediction-support");
+      const rangeNote = document.querySelector("#range-support-note");
+      warning.hidden = support.level === "supported";
+      if (support.level === "supported") {
+        badge.textContent = "Within historical range";
+        badge.className = "pill positive";
+        rangeNote.textContent = "Projected range based on historical simulation variability—not guaranteed outcomes.";
+      } else if (support.level === "extrapolation") {
+        warning.innerHTML = "<strong>Outside historical price range</strong> — this is an extrapolation and is less reliable.";
+        badge.textContent = "Extrapolation";
+        badge.className = "pill warning";
+        rangeNote.textContent = "Exploratory extrapolation: historical variability does not make this an in-range prediction.";
+      } else {
+        warning.innerHTML = "<strong>Insufficient historical evidence</strong> — this price is more than one full observed price span beyond the training range. Numeric results are exploratory only and cannot be treated as a reliable profit forecast.";
+        badge.textContent = "Insufficient evidence";
+        badge.className = "pill warning";
+        rangeNote.textContent = "Exploratory only: the proposed price is far outside the historical evidence used to fit the model.";
+      }
     }
 
     function renderOptimizer(result) {
@@ -253,6 +280,6 @@
     loadProductDefaults();
   }
 
-  window.PricingApp = { calculateProposedPrice, modelFeatures, predictDemand, demandScenarios, calculateProjection, calculateScenario, priceRangeWarning, optimizePrice, validateValues, readFormValues, applyProductDefaults, calculateDecision };
+  window.PricingApp = { calculateProposedPrice, modelFeatures, predictDemand, demandScenarios, calculateProjection, calculateScenario, predictionSupport, priceRangeWarning, optimizePrice, validateValues, readFormValues, applyProductDefaults, calculateDecision };
   if (typeof document !== "undefined") document.addEventListener("DOMContentLoaded", init);
 }());

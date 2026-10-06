@@ -137,3 +137,5 @@ footer code { color: var(--ink); }
 .range-summary strong { display: flex; justify-content: space-between; font-size: .9rem; }
 .range-summary i { color: var(--muted); font-style: normal; font-weight: 500; }
 @media (max-width: 620px) { .range-summary { grid-template-columns: 1fr; } .range-row { font-size: .78rem; } }
+
+.pill.warning { background: #fff0cd; color: #704812; }

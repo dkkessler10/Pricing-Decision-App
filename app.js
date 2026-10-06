@@ -85,6 +85,8 @@
     const model = window.DEMAND_MODEL;
     const form = document.querySelector("#scenario-form");
     const product = document.querySelector("#product");
+    const dataset = document.querySelector("#dataset");
+    const period = document.querySelector("#period");
     const fields = {
       currentPrice: document.querySelector("#current-price"),
       priceChange: document.querySelector("#price-change"),
@@ -223,12 +225,11 @@
       [0, scenarios.length - 1].forEach((index) => context.fillText(money.format(scenarios[index].price), x(scenarios[index].price), height - 22));
     }
 
-    product.addEventListener("change", fillDefaults);
-    form.addEventListener("submit", compare);
+    product.addEventListener("change", fillDefaults); dataset.addEventListener("change", fillDefaults);
+    period.addEventListener("change", () => compare(null, false)); form.addEventListener("submit", compare);
     Object.values(fields).forEach((field) => field.addEventListener("input", (event) => compare(event, false)));
     document.querySelector("#reset-button").addEventListener("click", fillDefaults);
-    window.addEventListener("resize", () => compare(null, false));
-    fillDefaults();
+    window.addEventListener("resize", () => compare(null, false)); fillDefaults();
   }
 
   window.PricingApp = { calculateProposedPrice, modelFeatures, predictDemand, demandScenarios, calculateProjection, calculateScenario, priceRangeWarning, optimizePrice, validateValues };

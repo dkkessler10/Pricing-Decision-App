@@ -113,6 +113,8 @@
     const model = window.DEMAND_MODEL;
     const form = document.querySelector("#scenario-form");
     const product = document.querySelector("#product");
+    const dataset = document.querySelector("#dataset");
+    const period = document.querySelector("#period");
     const fields = {
       currentPrice: document.querySelector("#current-price"),
       priceChange: document.querySelector("#price-change"),

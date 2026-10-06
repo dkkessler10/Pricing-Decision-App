@@ -1,31 +1,61 @@
 # Pricing Decision Desk — Version 2
 
-A static, browser-based pricing tool that predicts product demand, inventory-constrained sales, ending inventory, lost sales, revenue, and contribution profit from `Full_Data_Regular.xlsx` and `Full_Data_Extended.xlsx`. Model training happens offline with a dependency-free Python script; GitHub Pages only loads exported JavaScript parameters and does not require a server or paid service.
+A static, browser-based decision tool answering one question:
 
-## Data preparation
+> **If I change this product's price by X%, what do the historical data suggest could happen to sales, remaining inventory, and profit—including a realistic range of outcomes?**
 
-`scripts/train_model.py` reads the workbooks directly as ZIP/XML files and builds a product-by-simulation-step panel. The analytical unit is total demand for one product across all three sales areas in one simulation step.
+The app uses only `Full_Data_Regular.xlsx` and `Full_Data_Extended.xlsx`. The two simulations are pooled behind the scenes; users do not need to select a run or configure modeling variables.
 
-The pipeline uses:
+## Simplified workflow
+
+The interface asks for four inputs:
+
+1. **Product**
+2. **Current price**, prefilled from the mean of the two workbooks' latest Current Pricing Conditions and editable
+3. **Price change percentage**, such as −10%, −5%, +5%, +10%, or +20%
+4. **Starting inventory**, prefilled from the mean of the latest Regular and Extended inventory snapshots and editable
+
+The proposed price is calculated automatically:
+
+```text
+Proposed price = current price × (1 + price change percentage ÷ 100)
+```
+
+The browser compares current and proposed expected outcomes side by side, shows a plausible low/expected/high range for the proposed price, and recommends the supported price with the highest expected contribution profit.
+
+## Historical analytical dataset
+
+`scripts/train_model.py` reads the two workbooks directly as ZIP/XML files using only Python's standard library. It combines:
 
 - **Sales** for delivered units, own price, revenue, cost, product, area, channel, period, and simulation step;
 - **Inventory / Inventory (2)** for opening stock by product, step, storage location, and area;
-- **Market / Market (2)** for quantity-weighted market average price by product and period;
-- **Current Inventory** for the scenario's default available-inventory input;
-- **Current Pricing Conditions** for the default proposed price; and
-- the workbook/run identity and period as model controls.
+- **Market / Market (2)** for quantity-weighted market price by product and period;
+- **Current Inventory** for starting-inventory defaults; and
+- **Current Pricing Conditions** for current-price defaults.
 
-The two Sales worksheets contribute 692 Regular and 681 Extended sales lines. Aggregation produces 744 product-step observations before inventory screening.
+The Sales worksheets contain 692 Regular and 681 Extended rows. They are aggregated into 744 product-by-simulation-step observations across the six products.
 
-### Demand versus realized sales
+### Separating demand from inventory-constrained sales
 
-Delivered units can understate customer demand when stock is unavailable. For each product-step, the pipeline compares delivered units in North, South, and West with the corresponding regional opening inventory. It flags an observation when a region has positive sales and opening inventory is no more than 105% of delivered units. This conservative rule removes **285 potentially inventory-constrained observations** rather than teaching the model that constrained sales represent low demand. The remaining **459 observations** train the final model.
+Delivered sales may understate demand when inventory is scarce. For every product-step, the training pipeline compares delivered units in North, South, and West with regional opening inventory. An observation is flagged when a region has positive sales and opening inventory is no more than 105% of its delivered units.
 
-This screen is imperfect because stock transfers can occur within a step and the workbooks do not contain lost-order or unconstrained-demand records. Predictions therefore remain model estimates, not direct measurements of latent customer demand.
+The model excludes **285 potentially constrained observations** and trains on the remaining **459 observations**. This prevents obvious stock-limited sales from being interpreted as weak customer demand. The screen remains approximate because in-step stock transfers exist and the workbooks do not record lost customer orders.
 
-## Model selection
+## Demand model
 
-Three intentionally simple approaches were compared on the same chronological holdout. The final 20% of usable steps in each simulation were held out; earlier observations were used for candidate training.
+The selected model is a small linear ridge regression. It uses these internal features:
+
+- product;
+- simulation run;
+- a linear period trend;
+- a separate absolute-price slope for each product; and
+- price relative to the period's market-average price.
+
+Run, period, and market price remain internal because they improve the historical specification but are not useful primary decision inputs. Browser predictions pool both simulations by averaging the fitted prediction over all usable historical run/period/market-price contexts for the selected product.
+
+### Model comparison and validation
+
+Candidate models were trained on earlier usable steps and evaluated on the final 20% of usable steps from each simulation.
 
 | Candidate | Holdout MAE | Holdout RMSE | Holdout WAPE |
 | --- | ---: | ---: | ---: |
@@ -33,69 +63,84 @@ Three intentionally simple approaches were compared on the same chronological ho
 | **Linear ridge regression** | **41.8 units** | **57.2 units** | **61.6%** |
 | Log-linear ridge regression | 46.4 units | 65.2 units | 68.4% |
 
-The linear ridge model was selected because it performed best on all three holdout metrics and remains explainable. It predicts units from:
+The linear ridge model had the best held-out result and was selected for its relative performance, stability, explainability, and small static-browser footprint. Its errors are still large, so the outputs are scenario estimates rather than precise forecasts.
 
-- product indicators;
-- simulation dataset/run;
-- a linear period trend;
-- a separate own-price slope for each product; and
-- own price relative to the quantity-weighted market price.
-
-The model is refit on all 459 usable observations after selection. Ridge regularization uses a penalty of 1.0 to reduce instability among correlated price features. `model-data.js` contains the fitted coefficients, validation metadata, context defaults, and observed price bounds used by the browser.
-
-### Cross-run check
-
-As a harder diagnostic, the same linear specification was trained on one simulation and evaluated on the other:
+A separate cross-run diagnostic trained on one simulation and tested on the other:
 
 | Held-out simulation | MAE | RMSE | WAPE |
 | --- | ---: | ---: | ---: |
 | Regular | 42.4 units | 63.4 units | 67.9% |
 | Extended | 61.4 units | 75.5 units | 128.9% |
 
-Generalization across runs is weak, especially by WAPE on Extended. This is prominently reflected in the app's uncertainty language. The model is useful for structured classroom scenario comparison, not precise demand forecasting.
+Weak cross-run generalization is an important limitation and a reason to display ranges rather than a single certain-looking result.
 
-## Browser calculations
+## Low, expected, and high outcomes
 
-For the selected product, simulation context, period, proposed price, and market average price, the exported model predicts unconstrained customer demand for one simulation step. The app then applies the user's available inventory:
+The ranges come from genuine out-of-sample errors, not absolute historical minima or maxima:
+
+1. Fit the selected specification on the earlier training steps.
+2. Predict the chronologically held-out observations.
+3. Calculate residuals as `actual demand − predicted demand`.
+4. Use the held-out residual distribution's **20th percentile** for the low-sales adjustment and **80th percentile** for the high-sales adjustment.
+5. Add those adjustments to the pooled central prediction, with demand floored at zero.
+
+In the current model artifact, the adjustments are approximately −43.0 units and +25.0 units. These bounds describe historical simulation variability; they are not confidence guarantees.
+
+For each demand outcome, the app applies inventory after predicting customer demand:
 
 ```text
-Predicted demand  = max(0, fitted linear model output)
-Expected sales    = min(predicted demand, available inventory)
-Ending inventory  = max(0, available inventory − expected sales)
-Estimated lost sales = max(0, predicted demand − available inventory)
-Revenue           = proposed price × expected sales
-Contribution profit = (proposed price − variable cost per unit) × expected sales
-Margin            = contribution profit ÷ revenue
+Expected units sold = min(predicted customer demand, starting inventory)
+Ending inventory    = max(0, starting inventory − expected units sold)
+Revenue             = price × expected units sold
+Contribution profit = (price − pooled weighted unit cost) × expected units sold
+Contribution margin = contribution profit ÷ revenue
 ```
 
-Available inventory, market price, and unit cost remain editable because they are scenario facts rather than fitted behavioral parameters. Their defaults come from the selected workbook's current inventory, latest market period, and historical weighted cost.
+Variable unit cost is intentionally kept out of the primary interface. It is the pooled historical cost divided by pooled delivered units for the selected product.
+
+## Current versus proposed results
+
+Both current and proposed scenarios show:
+
+- price;
+- predicted customer demand;
+- expected units sold after the inventory limit;
+- ending inventory;
+- revenue;
+- contribution profit; and
+- contribution margin.
+
+The proposed-price callout reports expected profit change in euros and percentage terms. A separate table shows low-sales, expected, and high-sales outcomes, including minimum/expected/maximum ending inventory and projected profit.
 
 ## Price optimizer and chart
 
-The optimizer evaluates 101 evenly spaced candidate prices between the selected product's minimum and maximum observed prices across both workbooks. It predicts demand at every candidate, caps sales at available inventory, and recommends the candidate with the highest projected contribution profit. Keeping the search inside observed bounds prevents distant price extrapolation.
+The optimizer evaluates 101 evenly spaced candidate prices between the selected product's historical minimum and maximum observed prices. For every candidate it calculates low, expected, and high demand; inventory-constrained sales; ending inventory; and contribution profit.
 
-The chart overlays:
+The recommendation maximizes **expected contribution profit** and also reports its plausible low-to-high profit range. The chart shows:
 
-- projected contribution profit on the left axis; and
-- predicted customer demand on the right axis.
+- expected contribution profit;
+- a shaded low-to-high profit band;
+- expected customer demand; and
+- the expected-profit-maximizing price.
 
-The highlighted point is the profit-maximizing candidate within the historical price range. Profit remains the objective; no company-valuation target is used.
+The optimizer never searches beyond the observed product range. A manually proposed price outside that range remains calculable, but the app displays:
 
-## Company valuation review
+> **Outside historical price range — this prediction is less reliable.**
 
-The Company_Valuation data was inspected for a possible later extension:
+No unsupported demand behavior is invented for distant prices.
 
-- Regular provides 50 sequential observations and Extended provides 81.
-- Both contain company valuation, profit, cash, receivables, loans, payables, debt loading, risk rates, and credit rating.
-- The within-file correlation between valuation and profit is approximately 0.80 in each simulation, so there is a visible association worth studying.
-- However, there are only two simulation runs, observations are serially dependent, several financial variables are cumulative or mechanically related, and some fields have little variation (Regular payables are always zero; Extended loans are always zero).
-- A random row split would therefore overstate validation quality, while holding out one of only two runs is not enough to establish generalization or rule out formula leakage.
+## Static GitHub Pages deployment
 
-The data is suitable for exploratory analysis and for designing a future valuation model, but it is **not sufficient to independently validate a valuation objective**. Contribution profit remains the optimizer objective.
+Training is a development step only:
 
-## Run and reproduce
+```bash
+python3 scripts/train_model.py
+node tests.js
+```
 
-Run the static site:
+The script exports coefficients, pooled prediction contexts, residual percentiles, defaults, validation metrics, and supported price ranges to `model-data.js`. The published page loads that artifact directly and requires no Python runtime, backend, API, credentials, or paid service.
+
+To run locally:
 
 ```bash
 python3 -m http.server 8000
@@ -103,32 +148,27 @@ python3 -m http.server 8000
 
 Then open `http://localhost:8000`.
 
-Regenerate the model artifact after either workbook changes:
-
-```bash
-python3 scripts/train_model.py
-node tests.js
-```
-
-The training script requires only Python's standard library. The published page loads `data.js`, `model-data.js`, and `app.js` directly in the browser.
-
 ## Important limitations
 
-- Historical prices were chosen by simulation participants rather than randomly assigned, so price coefficients can still reflect unmeasured strategy and timing differences.
-- The model controls for product, dataset, period, and market price, but it cannot capture promotions, competitors, customer identity, service levels, or all inventory movements.
-- Stockout screening uses opening regional inventory and delivered units; in-step transfers and unavailable lost-order records limit how precisely constrained demand can be identified.
-- Validation errors are large, and cross-run performance is weak. Use estimates to compare bounded scenarios, not as guaranteed forecasts.
-- A prediction covers one simulation step across all sales areas. It is not an order-line or full-game forecast.
-- Recorded `COST` is treated as variable/attributable cost; contribution profit is not whole-company accounting profit.
-- Candidate prices remain inside historical product bounds, but sparse observations within those bounds still make some interpolations uncertain.
+- Historical prices were chosen by simulation participants, not randomly assigned. Price effects may include unmeasured strategy or timing differences.
+- Stockout screening uses regional opening inventory and delivered units; in-step transfers and missing lost-order records limit identification of true unconstrained demand.
+- Holdout and cross-run errors are large. Use the app to compare bounded classroom scenarios, not as a guaranteed sales forecast.
+- A prediction represents total product demand for one simulation step across all three sales areas.
+- Pooling historical contexts deliberately hides run-specific controls from the UI, but an average context may not represent a future simulation exactly.
+- Recorded `COST` is treated as variable/attributable cost. Contribution profit is not whole-company accounting profit.
+- Predictions outside the displayed historical price range are extrapolations and are explicitly flagged as less reliable.
+
+## Company valuation review
+
+The Company_Valuation sheets contain 50 sequential Regular observations and 81 Extended observations. Valuation has an approximately 0.80 within-file correlation with profit, but there are only two runs, observations are serially dependent, several financial fields are cumulative or mechanically related, and some variables have almost no within-run variation. That evidence is insufficient for an independently validated valuation objective, so the optimizer continues to maximize contribution profit.
 
 ## Project files
 
-- `index.html` — static model inputs, projections, optimizer, and chart.
+- `index.html` — simplified inputs, current/proposed comparison, outcome range, optimizer, and chart.
 - `styles.css` — responsive presentation styling.
-- `app.js` — browser prediction, inventory constraint, profit calculation, optimization, and charting.
-- `data.js` — reduced combined historical Sales rows used for cost defaults.
-- `model-data.js` — generated model coefficients, validation metrics, contexts, and price bounds.
-- `scripts/train_model.py` — reproducible workbook preparation, stockout screening, training, validation, and export.
-- `tests.js` — dependency-free model and browser-calculation tests.
+- `app.js` — pooled demand prediction, range construction, inventory calculations, optimization, and charting.
+- `model-data.js` — generated coefficients, historical contexts, defaults, residual percentiles, validation metrics, and price bounds.
+- `scripts/train_model.py` — reproducible data preparation, constraint screening, training, validation, and export.
+- `tests.js` — dependency-free behavior and calculation tests.
+- `data.js` — auditable reduced Sales export retained for historical inspection; the simplified browser does not load it.
 - `Full_Data_Regular.xlsx` and `Full_Data_Extended.xlsx` — the only source workbooks.

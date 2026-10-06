@@ -95,9 +95,9 @@ The workbooks contain only 8–11 distinct product prices over narrow bands of r
 
 The app therefore classifies prediction support explicitly:
 
-- **Within historical range:** supported interpolation for this model.
-- **Extrapolation:** outside the observed range, but no more than one full observed price-span beyond its nearest boundary.
-- **Insufficient evidence:** more than one full observed price-span beyond the nearest boundary. Numeric results remain available for exploration, but are labeled exploratory and are not presented as reliable forecasts.
+- **Supported prediction:** the price is inside the observed product range and normal forecasts are shown.
+- **Lower-confidence extrapolation:** the price is outside the observed range, but no more than one full observed price-span beyond its nearest boundary; forecasts remain visible with a warning.
+- **Insufficient historical evidence:** the price is more than one full observed price-span beyond the nearest boundary. The proposed price remains visible, but demand, sales, inventory, revenue, profit, margin, profit change, and Low / Expected / High projections are withheld rather than displayed with misleading precision.
 
 ## Low, expected, and high outcomes
 
@@ -125,7 +125,7 @@ Variable unit cost is intentionally kept out of the primary interface. It is the
 
 ## Current versus proposed results
 
-Both current and proposed scenarios show:
+When a scenario is supported or a limited extrapolation, current and proposed results show:
 
 - price;
 - predicted customer demand;
@@ -135,7 +135,7 @@ Both current and proposed scenarios show:
 - contribution profit; and
 - contribution margin.
 
-The proposed-price callout reports expected profit change in euros and percentage terms. A separate table shows low-sales, expected, and high-sales outcomes, including minimum/expected/maximum ending inventory and projected profit.
+The proposed-price callout reports expected profit change in euros and percentage terms. A separate table shows low-sales, expected, and high-sales outcomes, including minimum/expected/maximum ending inventory and projected profit. When the proposed price enters the unsupported zone, the app keeps the price visible but replaces those proposed metrics and ranges with unavailable markers and an insufficient-evidence explanation.
 
 ## Price optimizer and chart
 

@@ -65,6 +65,11 @@
     return predictionSupport(model, product, price).level !== "supported";
   }
 
+  function forecastAvailability(model, product, price) {
+    const support = predictionSupport(model, product, price);
+    return { support, available: support.level !== "insufficient" };
+  }
+
   function optimizePrice(model, product, inventory, steps = 100) {
     const range = model.priceRanges[product];
     const scenarios = [];
@@ -114,6 +119,8 @@
       proposedPrice,
       current: calculateScenario(model, product, currentPrice, inventory),
       proposed: calculateScenario(model, product, proposedPrice, inventory),
+      currentAvailability: forecastAvailability(model, product, currentPrice),
+      proposedAvailability: forecastAvailability(model, product, proposedPrice),
       optimizer: optimizePrice(model, product, inventory)
     };
   }
@@ -162,27 +169,40 @@
         return;
       }
       const decision = calculateDecision(model, product.value, values);
-      renderComparison(decision.current.expected, decision.proposed.expected, decision.priceChange);
-      renderRange(decision.proposed);
-      renderSupport(decision.proposedPrice);
+      renderComparison(decision.current.expected, decision.proposed.expected, decision.priceChange, decision.currentAvailability, decision.proposedAvailability);
+      renderRange(decision.proposed, decision.proposedAvailability);
+      renderSupport(decision.proposedPrice, decision.proposedAvailability.support);
       renderOptimizer(decision.optimizer);
     }
 
-    function renderComparison(current, proposed, changePercent) {
-      const profitChange = proposed.profit - current.profit;
-      const profitChangePercent = current.profit === 0 ? null : profitChange / Math.abs(current.profit);
+    function renderComparison(current, proposed, changePercent, currentAvailability, proposedAvailability) {
       document.querySelector("#proposed-price-output").textContent = money.format(proposed.price);
       document.querySelector("#price-change-output").textContent = percent.format(changePercent / 100);
-      const outputs = {
-        "current-price-output": money.format(current.price), "proposed-price-result": money.format(proposed.price),
-        "current-demand": whole.format(current.demand), "proposed-demand": whole.format(proposed.demand),
-        "current-sales": whole.format(current.unitsSold), "proposed-sales": whole.format(proposed.unitsSold),
-        "current-ending": whole.format(current.endingInventory), "proposed-ending": whole.format(proposed.endingInventory),
-        "current-revenue": money.format(current.revenue), "proposed-revenue": money.format(proposed.revenue),
-        "current-profit": money.format(current.profit), "proposed-profit": money.format(proposed.profit),
-        "current-margin": percent.format(current.margin), "proposed-margin": percent.format(proposed.margin)
+      document.querySelector("#current-price-output").textContent = money.format(current.price);
+      document.querySelector("#proposed-price-result").textContent = money.format(proposed.price);
+      const metrics = ["demand", "sales", "ending", "revenue", "profit", "margin"];
+      const values = {
+        demand: [whole.format(current.demand), whole.format(proposed.demand)],
+        sales: [whole.format(current.unitsSold), whole.format(proposed.unitsSold)],
+        ending: [whole.format(current.endingInventory), whole.format(proposed.endingInventory)],
+        revenue: [money.format(current.revenue), money.format(proposed.revenue)],
+        profit: [money.format(current.profit), money.format(proposed.profit)],
+        margin: [percent.format(current.margin), percent.format(proposed.margin)]
       };
-      Object.entries(outputs).forEach(([id, value]) => { document.getElementById(id).textContent = value; });
+      metrics.forEach((metric) => {
+        document.querySelector(`#current-${metric}`).textContent = currentAvailability.available ? values[metric][0] : "—";
+        document.querySelector(`#proposed-${metric}`).textContent = proposedAvailability.available ? values[metric][1] : "—";
+      });
+      const comparisonAvailable = currentAvailability.available && proposedAvailability.available;
+      if (!comparisonAvailable) {
+        document.querySelector("#profit-change").textContent = "Forecast unavailable";
+        document.querySelector("#profit-change-percent").textContent = "—";
+        document.querySelector("#decision-callout").className = "decision-callout neutral";
+        document.querySelector("#decision-copy").textContent = "Insufficient historical evidence to estimate demand reliably at this price.";
+        return;
+      }
+      const profitChange = proposed.profit - current.profit;
+      const profitChangePercent = current.profit === 0 ? null : profitChange / Math.abs(current.profit);
       document.querySelector("#profit-change").textContent = `${profitChange >= 0 ? "+" : "−"}${money.format(Math.abs(profitChange))}`;
       document.querySelector("#profit-change-percent").textContent = profitChangePercent === null ? "Not available" : percent.format(profitChangePercent);
       const positive = profitChange >= 0;
@@ -190,8 +210,17 @@
       document.querySelector("#decision-copy").textContent = `Expected contribution profit ${positive ? "increases" : "decreases"} at the proposed price.`;
     }
 
-    function renderRange(outcomes) {
+    function renderRange(outcomes, availability) {
       const rows = ["demand", "unitsSold", "endingInventory", "revenue", "profit"];
+      if (!availability.available) {
+        rows.forEach((metric) => ["low", "expected", "high"].forEach((scenario) => {
+          document.querySelector(`#range-${metric}-${scenario}`).textContent = "—";
+        }));
+        ["minimum-ending", "expected-ending", "maximum-ending", "minimum-profit", "expected-profit-range", "maximum-profit"].forEach((id) => {
+          document.querySelector(`#${id}`).textContent = "—";
+        });
+        return;
+      }
       rows.forEach((metric) => ["low", "expected", "high"].forEach((scenario) => {
         const value = outcomes[scenario][metric];
         document.querySelector(`#range-${metric}-${scenario}`).textContent = ["revenue", "profit"].includes(metric) ? money.format(value) : whole.format(value);
@@ -205,26 +234,25 @@
       document.querySelector("#maximum-profit").textContent = money.format(Math.max(...profits));
     }
 
-    function renderSupport(price) {
-      const support = predictionSupport(model, product.value, price);
+    function renderSupport(price, support) {
       const warning = document.querySelector("#range-warning");
       const badge = document.querySelector("#prediction-support");
       const rangeNote = document.querySelector("#range-support-note");
       warning.hidden = support.level === "supported";
       if (support.level === "supported") {
-        badge.textContent = "Within historical range";
+        badge.textContent = "Supported prediction";
         badge.className = "pill positive";
         rangeNote.textContent = "Projected range based on historical simulation variability—not guaranteed outcomes.";
       } else if (support.level === "extrapolation") {
         warning.innerHTML = "<strong>Outside historical price range</strong> — this is an extrapolation and is less reliable.";
-        badge.textContent = "Extrapolation";
+        badge.textContent = "Lower-confidence extrapolation";
         badge.className = "pill warning";
         rangeNote.textContent = "Exploratory extrapolation: historical variability does not make this an in-range prediction.";
       } else {
-        warning.innerHTML = "<strong>Insufficient historical evidence</strong> — this price is more than one full observed price span beyond the training range. Numeric results are exploratory only and cannot be treated as a reliable profit forecast.";
-        badge.textContent = "Insufficient evidence";
+        warning.innerHTML = "<strong>Insufficient historical evidence</strong> — this price is more than one full observed price span beyond the training range. Demand and profit forecasts are withheld because a reliable estimate is not supported.";
+        badge.textContent = "Insufficient historical evidence";
         badge.className = "pill warning";
-        rangeNote.textContent = "Exploratory only: the proposed price is far outside the historical evidence used to fit the model.";
+        rangeNote.textContent = "Insufficient historical evidence to estimate demand reliably at this price; the normal outcome range is unavailable.";
       }
     }
 
@@ -280,6 +308,6 @@
     loadProductDefaults();
   }
 
-  window.PricingApp = { calculateProposedPrice, modelFeatures, predictDemand, demandScenarios, calculateProjection, calculateScenario, predictionSupport, priceRangeWarning, optimizePrice, validateValues, readFormValues, applyProductDefaults, calculateDecision };
+  window.PricingApp = { calculateProposedPrice, modelFeatures, predictDemand, demandScenarios, calculateProjection, calculateScenario, predictionSupport, priceRangeWarning, forecastAvailability, optimizePrice, validateValues, readFormValues, applyProductDefaults, calculateDecision };
   if (typeof document !== "undefined") document.addEventListener("DOMContentLoaded", init);
 }());

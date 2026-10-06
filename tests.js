@@ -7,7 +7,7 @@ vm.runInContext(fs.readFileSync("model-data.js", "utf8"), context);
 vm.runInContext(fs.readFileSync("app.js", "utf8"), context);
 const {
   calculateProposedPrice, modelFeatures, predictDemand, demandScenarios,
-  calculateProjection, calculateScenario, predictionSupport, priceRangeWarning, optimizePrice, validateValues,
+  calculateProjection, calculateScenario, predictionSupport, priceRangeWarning, forecastAvailability, optimizePrice, validateValues,
   readFormValues, applyProductDefaults, calculateDecision
 } = context.window.PricingApp;
 const model = context.window.DEMAND_MODEL;
@@ -69,6 +69,9 @@ for (const product of model.products) {
   const support = predictionSupport(model, product, extremePrice);
   assert.equal(support.level, "insufficient");
   assert.equal(priceRangeWarning(model, product, extremePrice), true);
+  assert.equal(forecastAvailability(model, product, extremePrice).available, false);
+  const extremeDecision = calculateDecision(model, product, { currentPrice: String(model.defaults[product].currentPrice), priceChange: "40", inventory: String(model.defaults[product].inventory) });
+  assert.equal(extremeDecision.proposedAvailability.available, false);
   const productOptimizer = optimizePrice(model, product, model.defaults[product].inventory);
   assert.ok(productOptimizer.best.price >= model.priceRanges[product].minimum);
   assert.ok(productOptimizer.best.price <= model.priceRanges[product].maximum);
@@ -78,6 +81,8 @@ for (const product of model.products) {
 
 const nearMilkExtrapolation = model.priceRanges.Milk.maximum + (model.priceRanges.Milk.maximum - model.priceRanges.Milk.minimum) / 2;
 assert.equal(predictionSupport(model, "Milk", nearMilkExtrapolation).level, "extrapolation");
+assert.equal(forecastAvailability(model, "Milk", nearMilkExtrapolation).available, true);
+assert.equal(forecastAvailability(model, "Milk", model.priceRanges.Milk.maximum).available, true);
 
 const invalid = validateValues({ currentPrice: "", priceChange: "-100", inventory: "-1" });
 assert.equal(invalid.currentPrice, "Required");
